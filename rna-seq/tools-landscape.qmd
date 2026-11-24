@@ -1,0 +1,176 @@
+# Aligners, pseudoaligners and counters {#sec-tools-landscape}
+
+bagPipes makes particular choices: Trim Galore, Salmon, HISAT2, deepTools.
+Papers and other pipelines (nf-core/rnaseq, ENCODE, your collaborators')
+make different ones. This chapter is a map of the common tools for each
+job, what each one **assumes**, and why bagPipes chose what it did, so a
+methods section that says "reads were aligned with STAR and counted with
+featureCounts" makes sense.
+
+## Three roads from reads to gene counts
+
+```{mermaid}
+flowchart TD
+  T["Trimmed reads"] --> G1["Align to the genome<br/>(splice-aware: STAR, HISAT2)"]
+  G1 --> G2["Count reads on genes<br/>(featureCounts, HTSeq-count)"]
+  T --> P1["Map to the transcriptome<br/>(Salmon, kallisto)"]
+  P1 --> P2["Sum transcripts to genes<br/>(tximport)"]
+  G1 --> H1["Genome alignments projected<br/>onto transcripts → Salmon / RSEM"]
+  G2 & P2 & H1 --> D["Count matrix → DESeq2 / edgeR / limma"]
+```
+
+| Road | Example | Gives you genome tracks? | Handles isoforms? | Speed |
+|---|---|---|---|---|
+| 1. Align + count | STAR → featureCounts | yes | no (gene-level only; ambiguous reads dropped) | slower |
+| 2. Pseudoalign / quasi-map | **Salmon → tximport** (bagPipes) | no | yes | fast |
+| 3. Hybrid | STAR → Salmon (nf-core/rnaseq default), RSEM | yes | yes | slowest |
+
+bagPipes runs **roads 1 and 2 side by side**: Salmon for the numbers, and
+HISAT2 for BAMs and tracks you can look at. It does not count reads from the
+BAMs.
+
+## Splice-aware aligners
+
+RNA reads come from **spliced** transcripts, so one read can start in exon 1
+and end in exon 2, with thousands of bases of intron between them in the genome.
+A **splice-aware** aligner can split a read across an intron (the `N` in
+CIGAR). A DNA aligner cannot.
+
+| Tool | Splice-aware | Memory (human) | Notes |
+|---|---|---|---|
+| **STAR** | yes | ~32 GB | Very fast and accurate; ENCODE and nf-core standard. Can count genes itself (`--quantMode GeneCounts`) |
+| **HISAT2** | yes | ~8 GB | What bagPipes uses. Hierarchical index makes it small; accuracy close to STAR for typical data |
+| TopHat / TopHat2 | yes | | **Obsolete**; replaced by HISAT2. You'll still see it in older papers |
+| Bowtie2, BWA-MEM | **no** | | DNA aligners: right for ChIP, ATAC, CUT&RUN, WGS; **wrong for RNA-seq** |
+| minimap2 | yes (`-ax splice`) | | For **long reads** (Nanopore, PacBio Iso-Seq) |
+
+**What aligners assume**
+
+- The reference genome is right for your samples (same species and build;
+  no large deletions or inversions).
+- Introns mostly follow the canonical **GT…AG** motif. Aligners give these a
+  bonus, which is also how HISAT2 decides the `XS` strand tag.
+- A read that fits several places equally well is a **multi-mapper**. Each
+  aligner has rules about how many locations to report (HISAT2 searches for up
+  to 5 by default; one is marked primary, the rest secondary) and gives them
+  low MAPQ.
+
+## Pseudoaligners (lightweight mappers)
+
+Instead of working out a base-by-base alignment, these tools ask only
+**which transcripts a read is compatible with**, then use a statistical model
+(EM) to divide reads among isoforms ([Salmon](salmon.qmd)). They are
+sometimes called *pseudoaligners*, *quasi-mappers* or *lightweight mappers*.
+
+| Tool | Method | Notes |
+|---|---|---|
+| **Salmon** | *Selective alignment*: k-mer matching, then a quick alignment score check | What bagPipes uses. Models GC and sequence bias; can use **decoys** (the genome) to avoid assigning intronic/intergenic reads to transcripts |
+| **kallisto** | *Pseudoalignment* on a de Bruijn graph of the transcriptome | Very fast, very low memory. Also the base of single-cell tools (`kallisto bus`) |
+| RSEM | EM on real alignments to the transcriptome | Older, slower; used by ENCODE and TCGA |
+
+**What pseudoaligners assume**
+
+- **Every RNA in your sample is in the annotation.** Reads from
+  unannotated genes, introns (pre-mRNA) or intergenic regions have nowhere to
+  go. They are either left unmapped (lower mapping rate) or, worse, assigned
+  to a similar annotated transcript. This is why total-RNA libraries map at
+  lower rates than poly-A libraries.
+- The fragment length distribution, sequence bias and library type can be
+  learned from the data.
+- They give **no genome coordinates**, so no BAM to view and no tracks. That's
+  the reason bagPipes also runs HISAT2.
+
+## Read counters
+
+After genome alignment (road 1), a counter decides which gene each read
+belongs to, using the GTF.
+
+| Tool | Notes |
+|---|---|
+| **featureCounts** (Subread / Rsubread) | Very fast. Counts read pairs on exons, summed per gene. By default **drops multi-mappers and reads overlapping two genes** |
+| **HTSeq-count** | The original; slower. Similar rules ("union" mode by default) |
+| STAR `--quantMode GeneCounts` | Same idea, done during alignment; writes three columns (unstranded, sense, antisense) |
+
+**What counters assume**: reads that are ambiguous between genes are best
+thrown away; gene-level counts are enough (no isoforms); and you've told them
+the right strandedness. A wrong strand setting quietly sends most reads to the
+"no feature" bin.
+
+## Strandedness: one library, many names
+
+Every tool has its own name for the same library type. For a **dUTP / TruSeq
+Stranded / NEB Directional** paired-end library (read 1 antisense):
+
+| Tool | Setting for dUTP | For unstranded | For read-1-sense kits |
+|---|---|---|---|
+| Salmon `-l` | `ISR` (bagPipes uses `A` = detect it) | `IU` | `ISF` |
+| kallisto | `--rf-stranded` | (none) | `--fr-stranded` |
+| HISAT2 `--rna-strandness` | `RF` (bagPipes doesn't set it) | (none) | `FR` |
+| featureCounts `-s` | `2` | `0` | `1` |
+| HTSeq-count `-s` | `reverse` | `no` | `yes` |
+| STAR GeneCounts column | 4 | 2 | 3 |
+| deepTools `--filterRNAstrand` | assumes dUTP | n/a | the opposite of what you want |
+| RSeQC `infer_experiment.py` | `1+-,1-+,2++,2--` dominant | ~50/50 | `1++,1--,2+-,2-+` dominant |
+
+Keep this table handy. It's the most common source of confusion when switching
+between pipelines.
+
+## Trimmers
+
+| Tool | Notes |
+|---|---|
+| **Trim Galore** | What bagPipes uses. A wrapper around **Cutadapt** that auto-detects the adapter and handles pairs |
+| Cutadapt | The underlying engine; full control |
+| fastp | Fast all-in-one: trimming, QC report, poly-G trimming (helpful for NovaSeq/NextSeq 2-colour chemistry) |
+| Trimmomatic | Older, Java; still common in papers |
+
+Note that both Salmon and STAR cope with some leftover adapter by soft-clipping
+or ignoring it, so whether to trim at all is debated. Trimming is cheap and
+makes QC easier to interpret, which is why bagPipes does it.
+
+## QC tools
+
+| Tool | What it adds |
+|---|---|
+| **FastQC** | Per-file read QC (bagPipes) |
+| **MultiQC** | Collects every tool's logs into one report (bagPipes) |
+| samtools `flagstat` / `idxstats` | Alignment summary, reads per chromosome (bagPipes: flagstat) |
+| RSeQC | Strandedness (`infer_experiment.py`), gene-body coverage (3' bias), read distribution (exon/intron/intergenic) |
+| Qualimap `rnaseq`, Picard `CollectRnaSeqMetrics` | Similar RNA-specific metrics |
+
+## Differential expression tools (after the pipeline)
+
+| Tool | Model | Notes |
+|---|---|---|
+| **DESeq2** | Negative binomial, shrunken dispersions | The usual choice; takes `tximport` output directly ([Into R](into-r.qmd)) |
+| edgeR | Negative binomial | Similar results; flexible for complex designs |
+| limma-voom | Linear model on log-CPM with weights | Fast; good with many samples |
+
+All three assume that **most genes don't change** between conditions (that's
+how they normalise) and that you have **biological replicates**. With one
+sample per condition there is no way to estimate variability, so no valid
+p-values.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. A collaborator aligned RNA-seq reads with Bowtie2. What will go wrong?
+2. Your total-RNA library has a Salmon mapping rate of 45 %, but HISAT2 aligns
+   92 % of reads. Is something broken?
+3. You switch from bagPipes to a STAR + featureCounts pipeline for a dUTP
+   library. Which `-s` value do you give featureCounts?
+4. Why does bagPipes run an aligner at all, if Salmon makes the counts?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. Bowtie2 isn't splice-aware, so reads crossing exon–exon junctions fail to
+   align or are soft-clipped. You lose a large share of reads, unevenly
+   across genes.
+2. Probably not. Total RNA has many intronic (pre-mRNA) reads. They align to the
+   genome but have no matching transcript in Salmon's index.
+3. `-s 2` (reversely stranded).
+4. For genome coordinates: BAMs and bigWig tracks to look at in IGV, and
+   alignment QC. Salmon doesn't produce these.
+:::
+:::

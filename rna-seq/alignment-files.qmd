@@ -1,0 +1,229 @@
+# Alignment files: SAM, BAM and CRAM {#sec-alignment-files}
+
+An aligner takes each read and writes down **where in the genome it fits and
+how**. The result is a **SAM** file (Sequence Alignment/Map), or its
+compressed form, **BAM**. It's the biggest and richest file the pipeline
+makes, and worth learning to read.
+
+## SAM, BAM and CRAM
+
+| | SAM | BAM | CRAM |
+|---|---|---|---|
+| Kind | Plain text | Binary, bgzip-compressed | Binary, compressed against the reference |
+| Size | Huge | ~3–4× smaller than SAM | Smaller again |
+| Read it with | `less` | `samtools view` | `samtools view` + the reference FASTA |
+| In bagPipes | never written to disk | `output/align/*.bam` | not used |
+
+The SAM text only ever exists inside the pipe in the `align` rule
+(`hisat2 ... | samtools view -u | samtools sort ...`).
+
+## The header
+
+A BAM starts with header lines that begin with `@`:
+
+```bash
+samtools view -H output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam | head
+```
+
+```
+@HD  VN:1.0  SO:coordinate                         <- format version; sorted by coordinate
+@SQ  SN:chr1  LN:248956422                         <- one line per chromosome: name, length
+@SQ  SN:chr2  LN:242193529
+...
+@PG  ID:hisat2  PN:hisat2  VN:2.2.1  CL:"hisat2 -q -x ... -1 ... -2 ..."   <- programs that touched the file
+@PG  ID:samtools ...
+```
+
+The `@PG` lines are a record of what was done to the file. Useful when
+someone sends you a BAM and you want to know how it was made.
+
+## The alignment lines: 11 columns
+
+```bash
+samtools view output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam | head -2
+```
+
+```
+A00123:456:HXXXXDSX2:1:1101:10004:1000  163  chr7  5527760  60  45M1102N55M  =  5528950  1290  TTGCAGG...  FFFF...  AS:i:0  NM:i:0  NH:i:1  XS:A:+
+A00123:456:HXXXXDSX2:1:1101:10004:1000  83   chr7  5528950  60  100M         =  5527760  -1290 GCCCAGC...  FFFF...  AS:i:0  NM:i:0  NH:i:1
+```
+
+(Example lines.) Both mates of the pair appear, each on its own line.
+
+| # | Column | Example | Meaning |
+|---|---|---|---|
+| 1 | QNAME | `A00123:...:1000` | Read name, from the FASTQ header (same for both mates) |
+| 2 | FLAG | `163` | A number encoding yes/no facts about the read (below) |
+| 3 | RNAME | `chr7` | Chromosome it aligned to (`*` if unmapped) |
+| 4 | POS | `5527760` | Leftmost aligned base, **1-based** |
+| 5 | MAPQ | `60` | Mapping quality: how sure the aligner is this is the right place |
+| 6 | CIGAR | `45M1102N55M` | How the read lines up with the genome (below) |
+| 7 | RNEXT | `=` | Chromosome of the mate (`=` means the same) |
+| 8 | PNEXT | `5528950` | Position of the mate |
+| 9 | TLEN | `1290` | Distance spanned by the pair on the genome (includes introns) |
+| 10 | SEQ | `TTGCAGG...` | The read's bases, **as they align to the + strand** |
+| 11 | QUAL | `FFFF...` | Its quality string (same encoding as FASTQ) |
+| 12+ | tags | `NH:i:1` | Optional extra fields, `TAG:TYPE:VALUE` |
+
+::: {.callout-note}
+## SEQ may be reverse-complemented
+
+If a read aligned to the − strand, the SAM file stores its
+**reverse complement**, so SEQ always reads left to right along the
+reference. That is why SEQ in a BAM doesn't always match the FASTQ.
+:::
+
+### FLAG
+
+The flag is the sum of these bits:
+
+| Bit | Value | Meaning when set |
+|---|---|---|
+| 0x1 | 1 | Read is paired |
+| 0x2 | 2 | Both mates aligned as a proper pair |
+| 0x4 | 4 | This read is unmapped |
+| 0x8 | 8 | Its mate is unmapped |
+| 0x10 | 16 | This read aligned to the **reverse** strand |
+| 0x20 | 32 | Its mate aligned to the reverse strand |
+| 0x40 | 64 | This is **read 1** |
+| 0x80 | 128 | This is **read 2** |
+| 0x100 | 256 | **Secondary** alignment (another possible location of a multi-mapper) |
+| 0x200 | 512 | Failed quality checks |
+| 0x400 | 1024 | PCR or optical duplicate (only if a tool marked it) |
+| 0x800 | 2048 | Supplementary alignment (chimeric/split read) |
+
+So `163` = 128 + 32 + 2 + 1: read 2, mate on reverse strand, proper pair, paired.
+And `83` = 64 + 16 + 2 + 1: read 1, on the reverse strand, proper pair, paired.
+In a properly paired library you'll mostly see **99/147** and **83/163**.
+
+Don't do this sum in your head: use `samtools flags 163` or
+[Picard's flag explainer](https://broadinstitute.github.io/picard/explain-flags.html).
+
+### CIGAR
+
+The CIGAR string is a list of *length + operation*:
+
+| Op | Meaning | Uses up read bases? | Uses up genome bases? |
+|---|---|---|---|
+| `M` | Aligned (match **or** mismatch) | yes | yes |
+| `I` | Insertion in the read | yes | no |
+| `D` | Deletion from the read | no | yes |
+| `N` | **Skipped region: an intron** | no | yes |
+| `S` | Soft clip: bases in the read but not aligned | yes | no |
+| `H` | Hard clip: bases removed from SEQ | no | no |
+
+`45M1102N55M` means 45 bases align, the next 1,102 bp of genome are skipped
+(an intron), and the last 55 bases align in the next exon. **`N` is the
+fingerprint of RNA-seq.** Only a splice-aware aligner writes it
+([Tools](tools-landscape.qmd)).
+
+### MAPQ
+
+MAPQ = −10 log~10~ P(wrong location), but each aligner computes it in its
+own way. For **HISAT2**, in practice:
+
+| MAPQ | Meaning |
+|---|---|
+| 60 | Unique: one best location |
+| 1 | Aligns equally well to 2 or more places |
+| 0 | Aligns to many places |
+
+### Tags you'll see from HISAT2
+
+| Tag | Meaning |
+|---|---|
+| `NH:i:n` | Number of places this read aligned (1 = unique) |
+| `AS:i:n` | Alignment score (0 is perfect; more negative is worse) |
+| `NM:i:n` | Number of mismatches + indels vs the reference |
+| `XS:A:+/-` | For spliced reads, the strand the intron motif implies (GT-AG on + or −) |
+| `MD:Z:...` | Where the mismatches are |
+
+## Sorted and indexed
+
+HISAT2 writes reads in the order it reads them. `samtools sort` reorders
+them by **chromosome and position** (`SO:coordinate` in the header), and
+`samtools index` writes a `.bai` file next to the BAM. The index is a table
+of contents: "chr7:5,500,000 starts at byte X". With it, IGV or `samtools
+view` can jump straight to a region instead of reading the whole file.
+
+**Keep the `.bai` next to its `.bam`, with the same name plus `.bai`.**
+
+## samtools: the tool for BAM files
+
+```bash
+module load samtools/1.22
+B=output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam
+
+samtools view -H $B                     # header only
+samtools view $B | head                 # first alignments, as text
+samtools view $B chr7:5527000-5531000 | wc -l   # alignments in a region (needs .bai)
+samtools view -c $B                     # count alignment lines
+samtools view -c -F 260 $B              # count primary mapped reads (exclude unmapped 4 + secondary 256)
+samtools view -c -q 10 $B               # alignments with MAPQ >= 10
+samtools view -f 2 -b $B > proper.bam   # keep only proper pairs (-f = must have flag)
+
+samtools flagstat $B                    # summary (bagPipes saves this as _stats.txt)
+samtools idxstats $B                    # reads per chromosome (chrM share is a QC signal!)
+samtools stats $B | grep ^SN            # detailed summary numbers
+samtools sort -n $B -o byname.bam       # sort by read name (some tools want this)
+samtools merge merged.bam a.bam b.bam   # combine BAMs (the mergeAlign rule)
+```
+
+`-f` keeps reads that **have** the flag bits; `-F` keeps reads that **don't**.
+
+### Reading `samtools flagstat`
+
+bagPipes saves this for every sample as `align/{sample}_stats.txt`:
+
+```
+203512 + 0 in total (QC-passed reads + QC-failed reads)
+200000 + 0 primary
+3512 + 0 secondary
+0 + 0 supplementary
+0 + 0 duplicates
+197612 + 0 mapped (97.10% : N/A)
+194100 + 0 primary mapped (97.05% : N/A)
+200000 + 0 paired in sequencing
+100000 + 0 read1
+100000 + 0 read2
+188400 + 0 properly paired (94.20% : N/A)
+...
+```
+
+(Example numbers.) Look at **primary mapped %** (how many reads found a
+home) and **properly paired %**. "Total" can be more than the number of reads,
+because secondary alignments are counted too.
+
+## Looking at BAMs in IGV
+
+1. Download `{sample}_sorted.bam` **and** `{sample}_sorted.bam.bai` to the
+   same folder (or open them from a mounted drive).
+2. In IGV, choose the same genome (**hg38**), then *File → Load from File*.
+3. Type a gene name (e.g. `ACTB`) in the location box.
+
+What you'll see: grey bars are reads; thin lines joining them are **introns
+spliced across** (`N` in the CIGAR); coloured letters are mismatches; a
+coverage histogram on top. Right-click → *Group alignments by → first-of-pair
+strand* to see strandedness.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. A read has FLAG `99`. Decode it.
+2. What does the CIGAR `3S97M` mean?
+3. Why does `samtools view $B chr1:1000-2000` fail without a `.bai` file?
+4. `idxstats` shows 30 % of reads on `chrM`. What might that mean?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. 64 + 32 + 2 + 1: read 1, mate on the reverse strand, proper pair, paired.
+   (This read is on the forward strand.)
+2. The first 3 bases are soft-clipped (present in the read but not aligned,
+   often leftover adapter or a mismatch at the end), then 97 bases align.
+3. Without the index samtools can't jump to a region; it would have to
+   scan the whole file, and it refuses to.
+4. A lot of mitochondrial RNA. That's common in some cell types, but very high
+   values can indicate stressed or dying cells, or a cytoplasm-heavy prep.
+:::
+:::

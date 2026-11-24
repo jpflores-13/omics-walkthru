@@ -1,0 +1,57 @@
+# Teaching guide {.unnumbered}
+
+This page is for whoever leads the sessions. It suggests a schedule for the
+RNA-seq module, what to prepare, and where learners usually get stuck.
+
+## Format
+
+Five sessions of about 90 minutes work well: roughly a third of each session
+spent explaining, two thirds hands-on. Learners should bring a laptop with a
+Longleaf account that is already active, and access to the
+`/proj/phanstiel_lab` space. Sessions 1 and 2 are the slowest for true
+beginners; don't rush them, because every later session depends on being
+comfortable in the shell.
+
+| Session | Chapters | Hands-on goal |
+|---|---|---|
+| 1. From the sequencer to the shell | [After submission](rna-seq/after-submission.qmd), [Computing](rna-seq/computing.qmd), [Shell basics](rna-seq/shell-basics.qmd) | Log in, start an interactive job, find the test FASTQs, `zcat \| head`, count reads, redirect output to a file |
+| 2. Opening every file | [Sequence files](rna-seq/sequence-files.qmd), [Annotation files](rna-seq/annotation-files.qmd), [Alignment files](rna-seq/alignment-files.qmd) | Decode a FASTQ header and quality; count gene types in the GTF; make a BED of genes; decode SAM flags |
+| 3. Cleaning and checking reads | [Tools landscape](rna-seq/tools-landscape.qmd), [Pipeline map](rna-seq/pipeline-map.qmd), [FastQC](rna-seq/fastqc.qmd), [Trimming](rna-seq/trimming.qmd) | Run FastQC and Trim Galore by hand on one sample; compare read counts before and after |
+| 4. Where did the reads come from? | [Salmon](rna-seq/salmon.qmd), [Alignment](rna-seq/alignment.qmd), [Signal tracks](rna-seq/signal-tracks.qmd), [Merging](rna-seq/merging.qmd), [MultiQC](rna-seq/multiqc.qmd), [tximport](rna-seq/tximport.qmd) | Launch `RNApipe` on the test data **at the start**; while it runs, inspect `quant.sf`, `samtools view`, IGV tracks from a finished run |
+| 5. Running it yourself | [Snakemake](rna-seq/snakemake.qmd), [Running RNApipe](rna-seq/running-rnapipe.qmd), [Into R](rna-seq/into-r.qmd), [TT-seq](rna-seq/tt-seq.qmd) | Each learner reads their own MultiQC report, answers the exercise in *Running RNApipe*, and loads the RDS into DESeq2 |
+
+::: {.callout-tip}
+## Start the pipeline run early
+
+The test data finishes in well under an hour, but queue times vary. Have
+learners launch `sbatch RNApipe.sh` at the **start** of session 4 and work through the
+step chapters while it runs.
+:::
+
+## Before the first session
+
+- [ ] Confirm every learner can `ssh` into Longleaf and `cd /proj/phanstiel_lab`.
+- [ ] Make sure everyone has IGV installed (desktop version), or use
+      [igv.org/app](https://igv.org/app) in the browser.
+- [ ] Pick a reference block in `config/RNAconfig.yaml` and check the paths
+      exist. In the current bagPipes `main`, **every reference line is
+      commented out** (they start with `##`), so learners must uncomment one
+      block (see [Running RNApipe](rna-seq/running-rnapipe.qmd#choose-the-reference)).
+- [ ] Copy the test samplesheet somewhere learners can read it.
+
+## Where people get stuck
+
+| Sticking point | What helps |
+|---|---|
+| "Where am I?" in the terminal | Ask them to run `pwd` before every command for the first session |
+| Running heavy commands on the login node | Show `srun --pty` (interactive job) early, in session 1 |
+| Tabs vs spaces in the samplesheet | Open it with `cat -A` so tabs show as `^I` |
+| Thinking TPM and counts are interchangeable | Draw a long and a short gene with the same number of reads |
+| Strand-specific tracks look "backwards" | Go over the dUTP explanation in [Signal tracks](rna-seq/signal-tracks.qmd#which-strand-is-which) |
+| Snakemake lock after a cancelled job | `./unlock.sh rna`, covered in [Running RNApipe](rna-seq/running-rnapipe.qmd) |
+
+## Extending to other assays
+
+The ATAC-seq and ChIP-seq / CUT&Tag / CUT&RUN modules will reuse the
+Foundations part unchanged. In the repository, each assay gets its own folder
+(`rna-seq/`, `atac-seq/`, `chip-seq/`) and its own `part:` in `_quarto.yml`.

@@ -1,0 +1,70 @@
+project:
+  type: book
+  output-dir: _book
+
+book:
+  title: "omics-walkthru"
+  subtitle: "A plain-language walk through sequencing data processing, from FASTQ to results"
+  author: "JP Flores"
+  date: today
+  repo-url: https://github.com/jpflores-13/omics-walkthru
+  repo-actions: [edit, issue]
+  site-url: https://jpflores-13.github.io/omics-walkthru
+  page-navigation: true
+
+  chapters:
+    - index.qmd
+    - teaching-guide.qmd
+    - part: "Foundations"
+      chapters:
+        - rna-seq/after-submission.qmd
+        - rna-seq/computing.qmd
+        - rna-seq/shell-basics.qmd
+        - rna-seq/sequence-files.qmd
+        - rna-seq/annotation-files.qmd
+        - rna-seq/alignment-files.qmd
+        - rna-seq/tools-landscape.qmd
+    - part: "RNA-seq, step by step"
+      chapters:
+        - rna-seq/pipeline-map.qmd
+        - rna-seq/fastqc.qmd
+        - rna-seq/trimming.qmd
+        - rna-seq/salmon.qmd
+        - rna-seq/alignment.qmd
+        - rna-seq/signal-tracks.qmd
+        - rna-seq/merging.qmd
+        - rna-seq/multiqc.qmd
+        - rna-seq/tximport.qmd
+    - part: "Running it yourself"
+      chapters:
+        - rna-seq/snakemake.qmd
+        - rna-seq/running-rnapipe.qmd
+        - rna-seq/into-r.qmd
+    - part: "Related assays"
+      chapters:
+        - rna-seq/tt-seq.qmd
+  appendices:
+    - appendix/glossary.qmd
+    - appendix/cheatsheet.qmd
+    - appendix/troubleshooting.qmd
+    - appendix/references.qmd
+
+  sidebar:
+    style: docked
+    background: light
+
+format:
+  html:
+    theme:
+      light: [cosmo, custom.scss]
+    mermaid:
+      theme: neutral
+    code-background: true
+    code-copy: true
+    code-overflow: wrap
+    toc: true
+    toc-depth: 3
+    smooth-scroll: true
+    link-external-icon: true
+    link-external-newwindow: true
+    number-depth: 2

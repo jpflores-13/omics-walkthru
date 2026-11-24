@@ -1,0 +1,208 @@
+# From transcripts to genes: tximport and tximeta {#sec-tximport}
+
+**Rule:** `tximport` · **Tool:** R 4.4.0 with the `tximport` and
+`GenomicFeatures` packages · **Script:** `workflows/utils/txImporter.R` ·
+**Input:** every sample's `quant.sf` and the GTF · **Output:**
+`quant/{runName}_tximport.rds` · **Also covered:** tximeta, the newer
+alternative ([below](#tximeta))
+
+## The problem it solves
+
+Salmon reports **transcripts** (each isoform), one file per sample.
+Most analyses ask about **genes**, across all samples at once. `tximport`:
+
+1. reads every `quant.sf`,
+2. **adds up the transcripts of each gene** using a transcript → gene table
+   built from the GTF,
+3. returns **gene × sample matrices**, ready for DESeq2.
+
+```
+quant.sf (sample 1)                   tx2gene                     txi$counts
+ENST...269305  120.0  ─┐        ENST...269305 → ENSG...141510      gene              s1    s2   ...
+ENST...413465   30.5  ─┴─────►  ENST...413465 → ENSG...141510  ─►  ENSG...141510   150.5  ...
+ENST...456328    2.0  ─────►    ENST...456328 → ENSG...290825      ENSG...290825     2.0  ...
+```
+
+## What the script does
+
+```r
+library(tximport)
+library(GenomicFeatures)
+
+# 1. Paths to every quant.sf, one per sample in the samplesheet
+files <- file.path("output/quant", samplesheet[, "sn"], "quant.sf")
+
+# 2. Transcript -> gene table from the GTF
+txdb    <- makeTxDbFromGFF(gtfFile, format = "gtf")
+k       <- keys(txdb, keytype = "GENEID")
+df      <- select(txdb, keys = k, keytype = "GENEID", columns = "TXNAME")
+tx2gene <- df[, 2:1]                    # columns: TXNAME, GENEID
+
+# 3. Summarise to genes and save
+txi <- tximport(files, type = "salmon", tx2gene = tx2gene)
+saveRDS(txi, file = "output/quant/{runName}_tximport.rds")
+```
+
+## What's inside the object
+
+`txi` is a list of three matrices (genes in rows, samples in columns) plus
+one setting:
+
+| Element | What it is | Used for |
+|---|---|---|
+| `txi$counts` | Estimated reads per gene (summed `NumReads`) | DESeq2 / edgeR |
+| `txi$abundance` | TPM per gene (summed TPM) | Plots, comparing genes within a sample |
+| `txi$length` | Average transcript length per gene **in each sample**, weighted by which isoforms are expressed | DESeq2 uses it as an offset, correcting for isoform switching |
+| `txi$countsFromAbundance` | `"no"` | Records that counts are the original estimates |
+
+::: {.callout-warning}
+## Check the sample names
+
+In the current `txImporter.R`, the line `names(files) <- samplesheet["sn"]`
+indexes a matrix by a single name, which returns `NA`. The columns of the
+matrices end up named `NA` instead of by sample. The **order** is still the
+samplesheet order, so you can fix the names when you load the object:
+
+```r
+txi <- readRDS("output/quant/IMGL_iMGL_WT_1_tximport.rds")
+ss  <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt")
+colnames(txi$counts)    <- ss$sn
+colnames(txi$abundance) <- ss$sn
+colnames(txi$length)    <- ss$sn
+```
+
+The fix in the script is `names(files) <- samplesheet[, "sn"]`.
+:::
+
+::: {.callout-note}
+## Transcript IDs have to match
+
+`tximport` matches Salmon's `Name` column to `TXNAME` in the GTF. If the
+Salmon index was built from a different GENCODE release, or with `--gencode`
+(which strips the `|...` part of the header) and the GTF IDs keep their
+versions, some or all transcripts won't match and the script fails or drops
+them. Always build the Salmon index from the same release as the GTF.
+:::
+
+## tximeta: tximport that remembers where the data came from {#tximeta}
+
+`tximport` returns plain matrices. They don't record **which transcriptome**
+the numbers refer to, so a year later nobody can say whether the counts
+came from GENCODE v32 or v49, and the gene IDs carry no coordinates. A note at
+the top of `txImporter.R` already says the plan is to move to **tximeta**
+([Love *et al.*, *PLoS Comput Biol* 2020](https://doi.org/10.1371/journal.pcbi.1007664)),
+the newer package from the same group.
+
+`tximeta` reads the same `quant.sf` files, but it also:
+
+1. **Identifies the transcriptome automatically.** When Salmon builds an index
+   it stores a checksum (hash) of all transcript sequences, and every `quant`
+   output records it (`aux_info/meta_info.json`). tximeta compares that
+   checksum with a table of known releases (GENCODE, Ensembl, RefSeq) to find
+   out exactly which one you used.
+2. **Fetches the matching annotation** (GTF) and caches it, so you no longer pass
+   a GTF path and can't pass the wrong one.
+3. **Returns a `SummarizedExperiment`**: the matrices, plus your sample table
+   (`colData`), plus **genomic ranges for every transcript or gene**
+   (`rowRanges`), plus a record of the release, genome and versions
+   (`metadata`). Everything travels together in one object.
+
+```{mermaid}
+flowchart LR
+  Q["quant.sf + meta_info.json<br/>(contains index checksum)"] --> T["tximeta()"]
+  C["coldata<br/>files + names + condition"] --> T
+  T --> H{"checksum matches<br/>a known release?"}
+  H -- yes --> A["downloads/caches GTF,<br/>adds rowRanges + metadata"]
+  H -- "no (custom index)" --> L["makeLinkedTxome()<br/>tell it once which FASTA + GTF"]
+  L --> A
+  A --> SE["SummarizedExperiment<br/>(transcripts)"] --> G["summarizeToGene()"] --> GSE["SummarizedExperiment<br/>(genes)"] --> D["DESeqDataSet(gse, design)"]
+```
+
+### Using it
+
+```r
+library(tximeta)
+
+ss <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt", na.strings = "")
+coldata <- data.frame(
+  files     = file.path("output/quant", ss$sn, "quant.sf"),
+  names     = ss$sn,                                      # sample names: no NA problem
+  condition = factor(paste(ss$Treatment, ss$Time, sep = "_"))
+)
+stopifnot(all(file.exists(coldata$files)))
+
+se  <- tximeta(coldata)        # transcript level; prints which release it found
+gse <- summarizeToGene(se)     # gene level (sums transcripts, like tximport)
+
+gse                             # a SummarizedExperiment
+assayNames(gse)                 # "counts" "abundance" "length"
+rowRanges(gse)                  # coordinates of every gene
+metadata(gse)$txomeInfo         # source, organism, release, genome
+```
+
+`coldata` **must** have a `files` column and a `names` column; any other
+columns (condition, replicate) are carried along as the sample table.
+
+### When the index isn't recognised: linked transcriptomes
+
+tximeta recognises indexes built from the plain GENCODE/Ensembl/RefSeq
+transcript FASTA of releases in its table. If the lab's index was built
+from something else (a custom FASTA, extra sequences, or a release newer than
+your tximeta version knows), `tximeta()` warns that the checksum is unknown and
+returns a plain object without ranges. Tell it once which FASTA and GTF the
+index came from:
+
+```r
+makeLinkedTxome(
+  indexDir = "/proj/phanstiel_lab/Reference/human/hg38/indices/salmon/",
+  source   = "LocalGENCODE",                 # a "Local" prefix means "not the official files"
+  organism = "Homo sapiens",
+  release  = "49",
+  genome   = "GRCh38",
+  fasta    = "/path/to/the/transcripts.fa.gz",   # the FASTA the index was built from
+  gtf      = "/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf",
+  jsonFile = "gencode.v49_linkedTxome.json"      # share this file with the lab
+)
+se <- tximeta(coldata)
+```
+
+This writes a small JSON file that records the link. Keep it with the
+reference; anyone who loads it with `loadLinkedTxome()` gets the same result.
+
+### tximport or tximeta?
+
+| | tximport (bagPipes today) | tximeta |
+|---|---|---|
+| Input | `quant.sf` + GTF path you supply | `quant.sf` (+ a linked transcriptome for custom indexes) |
+| Output | list of matrices | `SummarizedExperiment` with ranges and provenance |
+| Knows which release was used | no | yes |
+| Gene coordinates | no | yes (`rowRanges`) |
+| Into DESeq2 | `DESeqDataSetFromTximport(txi, coldata, design)` | `DESeqDataSet(gse, design)` |
+| Needs internet | no | first time per release (to fetch the GTF), unless linked locally |
+
+Both give the same counts for the same inputs. tximeta mostly adds safety
+and convenience. The [Into R](into-r.qmd#option-b-start-from-tximeta) chapter
+shows both routes.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Why is `txi$length` different for each sample, not one number per gene?
+2. Which matrix do you give DESeq2: `counts` or `abundance`?
+3. What does tximeta use to work out which GENCODE release your Salmon index
+   came from?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. It's the average length of the gene's transcripts, **weighted by how much
+   of each isoform that sample expresses**. If a sample switches to a longer
+   isoform, it gets more reads without the gene being "more expressed", and the
+   length offset corrects for that.
+2. Neither directly: you give DESeq2 the whole `txi` object with
+   `DESeqDataSetFromTximport()`, which uses `counts` and `length`
+   ([Into R](into-r.qmd)).
+3. The checksum of the transcript sequences that Salmon stored in the index and
+   copied into each sample's `aux_info/meta_info.json`.
+:::
+:::

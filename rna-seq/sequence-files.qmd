@@ -1,0 +1,219 @@
+# Sequence files: FASTQ and FASTA {#sec-sequence-files}
+
+Two plain-text formats hold DNA sequence: **FASTQ** (your reads, with a
+quality score for every base) and **FASTA** (reference sequences, without
+qualities). This chapter opens each one and goes through it line by line.
+
+## FASTQ
+
+### What it looks like
+
+```bash
+zcat sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz | head -8
+```
+
+```
+@A00123:456:HXXXXDSX2:1:1101:10004:1000 1:N:0:ACGTACGT+TGCATGCA
+TTGCAGGTCTTCAGCAGTTCCTTGAACTCGTCCAGGTTGATCTTGGCCTTCAGGTTGTCG
++
+FFFFFFFFFFFF:FFFFFFFFFFFFFFFFFFFFF:FFFFFFFFFF,FFFFFFFFFFFFFF
+@A00123:456:HXXXXDSX2:1:1101:10022:1000 1:N:0:ACGTACGT+TGCATGCA
+GCCCAGCAGGAGCTGGAGAAGGCCAAGGAGGAGCTGCAGGCGCAGCTGGAGCAGGCCACA
++
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:FFFFFFFFFFFFFFFFFFFFFFFF
+```
+
+(Example reads; your instrument name and flow cell will differ.) Each read
+is exactly **four lines**:
+
+| Line | Starts with | Contains |
+|---|---|---|
+| 1 | `@` | The read's name (header) |
+| 2 | | The bases: `A`, `C`, `G`, `T`, and `N` when the machine couldn't decide |
+| 3 | `+` | A separator (sometimes followed by the name again) |
+| 4 | | One quality character per base, so it is exactly as long as line 2 |
+
+### The header, piece by piece
+
+Illumina headers follow a fixed pattern:
+
+```
+@A00123:456:HXXXXDSX2:1:1101:10004:1000 1:N:0:ACGTACGT+TGCATGCA
+ └──┬─┘ └┬┘ └───┬───┘ ┬ └┬─┘ └─┬─┘ └┬─┘ ┬ ┬ ┬ └──────┬────────┘
+ instrument  flow cell lane tile  x    y read filt ctrl  index (i7+i5)
+         run number                    1/2  Y/N
+```
+
+- Everything **before the space** identifies the cluster. It is the same in
+  R1 and R2 for the two reads of a pair. That is how tools check pairing.
+- **Read** `1` or `2` says which end this is.
+- **Filtered** `N` means the read passed Illumina's quality filter (`Y` reads
+  are normally already removed).
+- **Index** is the barcode that was used to demultiplex this read.
+
+### Quality scores
+
+Each quality character is a number written as a single character. The
+number is a **Phred quality score** Q:
+
+$$
+Q = -10 \log_{10}(P_\text{error})
+$$
+
+| Q | Chance the base is wrong | Accuracy |
+|---|---|---|
+| 10 | 1 in 10 | 90 % |
+| 20 | 1 in 100 | 99 % |
+| 30 | 1 in 1,000 | 99.9 % |
+| 40 | 1 in 10,000 | 99.99 % |
+
+To save space, Q is stored as the character whose ASCII code is Q + 33
+("Phred+33", used by every modern instrument):
+
+| Character | `!` | `+` | `5` | `?` | `:` | `F` | `I` |
+|---|---|---|---|---|---|---|---|
+| Q | 0 | 10 | 20 | 30 | 25 | 37 | 40 |
+
+NovaSeq and NextSeq 2000 **bin** qualities into just a few values, which is
+why their quality lines are mostly `F` with a few `:` and `,` (Q 37, 25, 11).
+
+::: {.callout-note}
+You will never decode these by hand. FastQC and Trim Galore do it. But it
+explains why a FASTQ quality line looks like random punctuation.
+:::
+
+### R1 and R2 are a matched pair of files
+
+For paired-end data you get two files, and **line *n* of one belongs with
+line *n* of the other**. If one file is truncated, filtered on its own or
+re-sorted, the pairing breaks. A quick check:
+
+```bash
+zcat sample_R1_001.fastq.gz | head -1
+zcat sample_R2_001.fastq.gz | head -1
+# the part before the space must be identical
+```
+
+### Useful things to do with FASTQ
+
+```bash
+# count reads (lines / 4)
+echo $(( $(zcat R1.fastq.gz | wc -l) / 4 ))
+
+# look at only the sequences of the first 5 reads
+zcat R1.fastq.gz | awk 'NR % 4 == 2' | head -5
+
+# read length distribution of the first 10,000 reads (after trimming, lengths vary)
+zcat R1_trimmed.fastq.gz | head -40000 | awk 'NR % 4 == 2 {print length($0)}' | sort -n | uniq -c
+
+# take the first 100,000 read pairs to make a small test set (keep R1 and R2 in step!)
+zcat R1.fastq.gz | head -400000 | gzip > test_R1.fastq.gz
+zcat R2.fastq.gz | head -400000 | gzip > test_R2.fastq.gz
+```
+
+**seqkit** is a fast all-purpose tool for FASTQ/FASTA (`module avail seqkit`):
+
+```bash
+seqkit stats *.fastq.gz          # reads, bases, min/avg/max length per file
+seqkit grep -p "A00123:456:HXXXXDSX2:1:1101:10004:1000" -r R1.fastq.gz   # find one read
+```
+
+## FASTA
+
+### What it looks like
+
+```
+>chr1
+NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
+...
+TAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCCTAACCC
+>chr2
+...
+```
+
+- A line starting with `>` is a **header**: the name of the sequence that follows.
+- The following lines are the sequence, usually wrapped at 60 or 80
+  characters per line. A sequence continues until the next `>`.
+- No quality line: a reference is assumed correct.
+- `N` marks bases that are unknown in the assembly (telomeres, centromeres, gaps).
+- **Lowercase** bases (`acgt`), when present, mark repeats (*soft-masking*).
+  Aligners treat them like uppercase.
+
+### Genome FASTA vs transcriptome FASTA
+
+| | Genome FASTA | Transcriptome FASTA |
+|---|---|---|
+| One entry per | chromosome / contig | transcript (every isoform) |
+| Size (human) | ~3 Gb | ~400 Mb |
+| Introns? | yes | no: exons only, already spliced |
+| Used by | HISAT2, STAR | Salmon, kallisto |
+
+A GENCODE transcriptome header packs several IDs together, separated by `|`:
+
+```
+>ENST00000456328.2|ENSG00000290825.1|-|-|DDX11L2-202|DDX11L2|1657|lncRNA|
+ transcript ID      gene ID              transcript  gene   length biotype
+                                         name        name
+```
+
+### Genome builds and chromosome names
+
+A **genome build** (also called an assembly) is one version of the reference
+sequence. Coordinates from one build are **not valid** in another.
+
+| Species | Builds you'll see | Notes |
+|---|---|---|
+| Human | **GRCh38 = hg38** (current), GRCh37 = hg19 (old) | bagPipes' references are hg38 |
+| Mouse | GRCm39 = mm39 (current), GRCm38 = mm10 (old, still common) | |
+
+Two naming styles exist for the same chromosomes: **UCSC** uses `chr1`, `chrM`;
+**Ensembl** uses `1`, `MT`. GENCODE files use the UCSC style. Every file you
+combine (FASTA, GTF, BED, bigWig) must use the same style, or tools will
+find "no overlap" without raising an error.
+
+::: {.callout-note}
+## "Primary assembly"
+
+The full human assembly also includes *alternate haplotypes*: extra copies of
+some regions with population variants. Reads that fall there look like
+multi-mappers. Pipelines usually use the **primary assembly** (chromosomes,
+unplaced contigs, no alternates), which is what `gencode.v49.primary_assembly`
+means in the bagPipes config.
+:::
+
+### Useful things to do with FASTA
+
+```bash
+module load samtools
+samtools faidx genome.fa                 # build genome.fa.fai (an index)
+cut -f1,2 genome.fa.fai | head           # chromosome names and lengths
+samtools faidx genome.fa chr7:5527148-5530601   # pull out a region (here: around ACTB)
+grep -c ">" transcripts.fa               # how many transcripts
+seqkit stats genome.fa
+```
+
+The `.fai` index is a small table: name, length, and where in the file each
+sequence starts. IGV and many tools need it next to the FASTA.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. A quality character is `5`. What is the chance that base is wrong?
+2. Why do the headers of the two reads in a pair match up to the space?
+3. You align to a genome whose FASTA says `>1`, and load a BED file that says
+   `chr1`. What happens?
+4. Why does Salmon use a transcriptome FASTA while HISAT2 uses the genome?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. `5` is Q20, so 1 in 100.
+2. They are two reads of the **same cluster** (the same DNA fragment); the
+   name identifies the cluster, the part after the space says which read.
+3. Nothing overlaps: the tools treat `1` and `chr1` as different chromosomes.
+   Usually there's no error message, just empty results.
+4. Salmon asks "which transcript did this read come from?" and needs the
+   spliced transcript sequences. HISAT2 asks "where in the genome?" and has to
+   handle introns itself ([Alignment](alignment.qmd)).
+:::
+:::

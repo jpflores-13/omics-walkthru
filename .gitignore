@@ -1,0 +1,15 @@
+# Quarto build
+_book/
+.quarto/
+*_files/
+/.luarc.json
+
+# OS / editors
+.DS_Store
+*.swp
+.Rhistory
+.RData
+.Rproj.user/
+
+/.quarto/
+**/*.quarto_ipynb

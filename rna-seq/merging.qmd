@@ -1,0 +1,79 @@
+# Merging replicates {#sec-merging}
+
+**Workflow:** `mergeSignal` (run second by `RNApipe.sh`) · **Rules:**
+`mergeAlign`, `mergeSignal`, `mergeStrandedSignal` · **Output:**
+`mergeAlign/{mergeName}_sorted.bam`, `mergeSignal/unstranded/{mergeName}.bw`,
+`mergeSignal/stranded/{mergeName}_fwd.bw`, `_rev.bw`
+
+## The problem it solves
+
+For **looking** at data, one track per condition is easier than one per
+replicate, and pooling replicates gives smoother signal. `mergeSignal` combines
+the BAMs of replicates and remakes the tracks from the merged BAM.
+
+::: {.callout-important}
+## Merged files are for viewing, not statistics
+
+Differential expression needs each replicate **separately**, because the
+variation between replicates is what DESeq2 uses to judge significance. The
+merged files are never used for counts; `tximport` uses the per-sample Salmon
+results.
+:::
+
+## How bagPipes decides what to merge
+
+Two config keys:
+
+- `fileNamesFrom`: columns joined to name each **sample**.
+- `mergeBy`: columns joined to name each **group**. Columns left out of
+  `mergeBy` are the ones that get pooled.
+
+With the shipped config:
+
+```yaml
+fileNamesFrom: ['Project', 'Cell_Type', 'Genotype', 'Treatment', 'Time', 'Bio_Rep', 'Tech_Rep']
+mergeBy:       ['Project', 'Cell_Type', 'Genotype', 'Treatment', 'Time']
+```
+
+`Bio_Rep` and `Tech_Rep` are left out, so replicates are pooled:
+
+| Sample name (`fileNamesFrom`) | Merge name (`mergeBy`) |
+|---|---|
+| `IMGL_iMGL_WT_Ab_24h_1_1` | `IMGL_iMGL_WT_Ab_24h` |
+| `IMGL_iMGL_WT_Ab_24h_2_1` | `IMGL_iMGL_WT_Ab_24h` |
+| `IMGL_iMGL_WT_NA_00h_1_1` | `IMGL_iMGL_WT_NA_00h` |
+| `IMGL_iMGL_WT_NA_00h_2_1` | `IMGL_iMGL_WT_NA_00h` |
+
+To **turn merging off**, set `mergeBy: ''` or make it identical to
+`fileNamesFrom`. `mergeSignal` then has nothing to do.
+
+## What bagPipes runs
+
+```bash
+samtools merge   mergeAlign/{mergeName}_sorted.bam  align/{rep1}_sorted.bam  align/{rep2}_sorted.bam
+samtools flagstat mergeAlign/{mergeName}_sorted.bam > mergeAlign/{mergeName}_stats.txt
+samtools index   mergeAlign/{mergeName}_sorted.bam
+bamCoverage -b mergeAlign/{mergeName}_sorted.bam -o mergeSignal/unstranded/{mergeName}.bw
+# + --filterRNAstrand forward / reverse if stranded: True
+```
+
+`samtools merge` keeps the sort order, so the merged BAM is already sorted.
+The same caveat as before applies: merged tracks are raw counts, so a
+group with more total reads looks taller.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. You want one track per genotype, pooling treatments and times. What would
+   `mergeBy` be?
+2. Why not run DESeq2 on the merged BAMs?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. `['Project', 'Cell_Type', 'Genotype']`.
+2. Merging removes the replicate-to-replicate variation DESeq2 needs to
+   estimate how noisy each gene is. With one "sample" per group there's no
+   valid test.
+:::
+:::

@@ -1,0 +1,39 @@
+# Troubleshooting {#sec-troubleshooting}
+
+Start with `grep -A 15 "Error in rule" RNApipeCore-*.out` to find which rule
+failed, then read `output/logs/{rule}_{sample}.err` and the job's SLURM log.
+
+## The run won't start
+
+| Message | Likely cause | Fix |
+|---|---|---|
+| `KeyError: 'Read1'` (or another column) | Samplesheet isn't tab-separated, or the header is misspelled | `cat -A RNAsamplesheet.txt \| head -2`: columns must be separated by `^I` |
+| `KeyError: 'salmon'` / `'hisat2'` / `'gtf'` | Reference lines still commented out in `RNAconfig.yaml` | Uncomment one block ([Running](../rna-seq/running-rnapipe.qmd#choose-the-reference)) |
+| `Directory cannot be locked` | A previous run was killed | `./unlock.sh rna`, then rerun |
+| `MissingInputException` | A FASTQ path is wrong | Check `Sequencing_Directory` ends in `/` or that `Read1`/`Read2` names are exact (`ls` them) |
+| `module: command not found` / module not found | Version in config no longer on Longleaf | `module avail <tool>` and update the `*Vers` key |
+| `FileNotFoundError: output/...Samplesheet.txt` | `output/` doesn't exist (only in dry runs by hand) | `mkdir -p output` |
+
+## A step fails
+
+| Rule | Symptom | Likely cause |
+|---|---|---|
+| `fastqc`, `trim` | `mv: cannot stat ...` | Two rows share a sample name, or the FASTQ doesn't end in `.fastq.gz` |
+| `trim` | `gzip: unexpected end of file` | Truncated FASTQ (incomplete copy). Check with `gzip -t` and `md5sum` |
+| `quant` | Out of memory / killed | Index too large for 20 GB; raise `mem_mb_per_cpu` in the rule |
+| `quant` | Very low mapping rate, but it runs | Wrong species index, rRNA, or total RNA ([Salmon](../rna-seq/salmon.qmd)) |
+| `align` | `Could not locate a HISAT2 index` | `hisat2:` must be the index **prefix**, not the folder |
+| `signal` | `bamCoverage` error about index | `.bai` missing or older than the BAM; rerun `align` |
+| `tximport` | `None of the transcripts in the quantification files are present in tx2gene` | Salmon index and GTF from different releases, or ID format mismatch |
+| `multiqc` | Report is missing a tool | That tool's logs were deleted or named unexpectedly; check `output/` |
+
+## The results look wrong
+
+| What you see | What to check |
+|---|---|
+| Strand tracks reversed (*GAPDH* in `_rev`) | Library is read-1-sense, not dUTP; Salmon `lib_format_counts.json` should say `ISF` |
+| Strand tracks identical | Unstranded library (`IU`); set `stranded: False` |
+| One sample unlike its replicates in PCA | Samplesheet labels, then that sample's MultiQC rows |
+| tximport matrix columns named `NA` | Known issue in `txImporter.R`; set column names from the copied samplesheet ([tximport](../rna-seq/tximport.qmd)) |
+| Tracks differ in height between samples | bagPipes' tracks are not depth-normalised ([Signal tracks](../rna-seq/signal-tracks.qmd)) |
+| No FastQC files in `output/QC` | They're `temp()`; the numbers are in MultiQC |

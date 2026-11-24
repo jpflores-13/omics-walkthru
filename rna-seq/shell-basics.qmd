@@ -1,0 +1,256 @@
+# The shell and plain-text files {#sec-shell}
+
+Almost every file in this book is a **plain-text file**, and almost every tool is
+run from the **shell**, the program that reads the commands you type. This chapter
+covers the ideas the rest of the book takes for granted: paths, plain text
+vs binary, compression (`gzip`), and joining small commands together with
+pipes. If you have never used a terminal, read it slowly and type every
+example yourself.
+
+## The shell in one paragraph
+
+When you open Terminal and `ssh` into Longleaf, you are talking to a program
+called **bash**. It shows a **prompt** (something like
+`[jdoe@longleaf-login1 ~]$`), waits for a line, runs it, prints the result,
+and shows the prompt again. A command is a program name followed by
+**arguments**, separated by spaces:
+
+```bash
+ls   -l   -h   /proj/phanstiel_lab
+#^   ^^^^^^^   ^^^^^^^^^^^^^^^^^^^
+#program options  argument (what to act on)
+```
+
+Options that start with one dash are short (`-h`); two dashes are long
+(`--help`). Almost every tool prints its own manual with `--help` or
+`man <tool>`.
+
+## Files, folders and paths
+
+Everything lives in one tree that starts at `/` (the **root**).
+
+```
+/
+├── nas/longleaf/home/jdoe/        <- your home, also called ~
+├── proj/phanstiel_lab/
+│   ├── Data/
+│   └── Reference/human/hg38/
+└── work/users/j/d/jdoe/
+```
+
+- An **absolute path** starts at `/` and works from anywhere:
+  `/proj/phanstiel_lab/Reference/human/hg38/`.
+- A **relative path** starts from where you are now (`pwd`):
+  `output/align/sample_sorted.bam`. bagPipes uses relative paths, which
+  is why you must `cd` into the bagPipes folder before running it.
+- `.` means "this folder", `..` means "the folder above", `~` means "my home".
+
+::: {.callout-warning}
+## Spaces and odd characters in names
+
+The shell splits on spaces, so `my file.txt` looks like two arguments.
+Use only letters, numbers, `_`, `-` and `.` in file and sample names. This
+matters for bagPipes too, because sample names become file names.
+:::
+
+## Plain text vs binary
+
+A **plain-text** file is a sequence of readable characters. You can open
+it with `less`, `head` or any text editor and understand it. FASTQ, FASTA,
+GTF, BED, SAM, the samplesheet and the config file are all plain text.
+
+A **binary** file stores numbers in a compact form meant for programs,
+not people. If you `cat` one, you get garbage. BAM, bigWig and RDS files are
+binary; each has a tool that turns it back into text (`samtools view`,
+`bigWigToBedGraph`, `readRDS()` in R).
+
+```bash
+head -4 RNAsamplesheet.txt        # readable
+head -c 200 sample_sorted.bam     # garbage: it is binary (and compressed)
+file sample_sorted.bam            # `file` guesses what a file is
+```
+
+### Tab-separated tables
+
+Most genomics text files are **tables**: one record per line, columns
+separated by a **tab** character (TSV). Tabs and spaces look the same on
+screen but they're different characters, and tools that expect tabs will
+break on spaces. To see the tabs:
+
+```bash
+cat -A RNAsamplesheet.txt | head -2   # tabs show as ^I, line ends as $
+```
+
+::: {.callout-warning}
+## Excel and Windows line endings
+
+Saving a samplesheet from Excel can add Windows line endings (`^M$` in `cat -A`)
+or turn `00h` into a date. Check with `cat -A` after you edit a table in Excel.
+:::
+
+## Compression and gzip
+
+Sequencing files are huge: one sample can be tens of gigabytes as plain
+text. FASTQ text repeats the same few letters (`A`, `C`, `G`, `T`) over and over,
+so it **compresses** very well. **gzip** is the standard compression
+program, and files compressed with it end in `.gz`. A compressed FASTQ is
+typically 3–5 times smaller.
+
+```bash
+gzip reads.fastq            # compress   -> reads.fastq.gz  (original removed)
+gunzip reads.fastq.gz       # decompress -> reads.fastq     (original removed)
+gzip -c reads.fastq > reads.fastq.gz   # -c: write to the screen/redirect, keep original
+```
+
+You almost never need to decompress. The tools in this book (FastQC, Trim
+Galore, Salmon, HISAT2) read `.fastq.gz` directly, and you can *look* inside
+without unpacking:
+
+```bash
+zcat reads.fastq.gz | head -8      # print the first 8 lines (2 reads)
+zless reads.fastq.gz               # page through it (q to quit)
+zgrep -c "^@" reads.fastq.gz       # rough read count (header lines; see note)
+gzip -t reads.fastq.gz && echo OK  # test the file isn't corrupted
+```
+
+::: {.callout-note}
+## Why `zgrep -c "^@"` is only rough
+
+Quality strings can also start with `@`, so this can over-count. Counting
+lines and dividing by four is the reliable way:
+`echo $(( $(zcat reads.fastq.gz | wc -l) / 4 ))`.
+:::
+
+::: {.callout-note}
+## gzip vs bgzip
+
+**bgzip** (from the htslib/samtools family) writes a special kind of gzip in
+independent blocks. It is still readable by `zcat`, but programs can also jump
+to the middle of it, which is what makes indexed files (BAM, `.vcf.gz` +
+`.tbi`, `.bed.gz` + `.tbi`) possible. BAM files are bgzip-compressed
+internally. For FASTQ, plain `gzip` is fine.
+:::
+
+## Checksums: did the file copy correctly?
+
+A **checksum** is a short fingerprint of a file's contents. If even one
+byte changes, the fingerprint changes. Sequencing cores and public
+databases publish MD5 checksums so you can check your download.
+
+```bash
+md5sum sample_R1_001.fastq.gz
+# 3b5d5c3712955042212316173ccf37be  sample_R1_001.fastq.gz
+md5sum -c md5sums.txt     # check every file listed in a checksum file
+```
+
+## Standard output, standard error and redirection
+
+Every program has two output streams:
+
+- **standard output (stdout, stream 1):** the results.
+- **standard error (stderr, stream 2):** messages, progress, warnings and errors.
+
+Both print to the screen by default. You can **redirect** them into files:
+
+```bash
+fastqc reads.fastq.gz > fastqc.out           # stdout to a file (overwrite)
+fastqc reads.fastq.gz >> fastqc.out          # append instead
+fastqc reads.fastq.gz 1> fastqc.out 2> fastqc.err   # each stream to its own file
+```
+
+This is exactly what every bagPipes rule does, so you'll see a matching
+`.out` / `.err` pair for each step in `output/logs/`:
+
+```
+fastqc -o output/QC R1.fastq.gz R2.fastq.gz 1> output/logs/fastqc_{sample}.out 2> output/logs/fastqc_{sample}.err
+```
+
+Many tools write their **useful summary to stderr** (Trim Galore, HISAT2
+and Salmon all do), so when you're looking for "how did it go?", check the
+`.err` file first.
+
+## Pipes: joining small tools together
+
+The pipe `|` sends the stdout of one command into the next, without
+writing a file in between. This is the most important idea in the Unix
+shell: small tools that each do one thing, joined together.
+
+```bash
+zcat reads.fastq.gz | head -4000 | wc -l
+# decompress -> keep the first 4000 lines -> count them  => 4000
+```
+
+The bagPipes `align` rule is a pipe: HISAT2 writes alignments to stdout,
+`samtools view` converts them to BAM, and `samtools sort` sorts them and
+writes the file. Nothing is written to disk until the end.
+
+```bash
+hisat2 -x index -1 R1.fq.gz -2 R2.fq.gz | samtools view -u | samtools sort -o out.bam
+```
+
+## The everyday toolkit
+
+| Command | What it does | Example |
+|---|---|---|
+| `head`, `tail` | First / last lines | `head -n 20 quant.sf` |
+| `less` | Scroll through a file (`/` to search, `q` to quit) | `less -S file.gtf` (`-S`: don't wrap long lines) |
+| `wc -l` | Count lines | `wc -l genes.bed` |
+| `grep` | Keep lines matching a pattern | `grep -w "GAPDH" genes.gtf` |
+| `cut` | Keep certain columns | `cut -f1,4,5 genes.gtf` |
+| `sort` | Sort lines | `sort -k4,4gr quant.sf` (column 4, numeric, reverse) |
+| `uniq -c` | Count identical neighbouring lines (sort first) | `cut -f3 genes.gtf \| sort \| uniq -c` |
+| `awk` | Filter and compute on columns | `awk '$5 > 100' quant.sf` (NumReads > 100) |
+| `column -t` | Line up columns for reading | `head quant.sf \| column -t` |
+| `ls -lh`, `du -sh` | File and folder sizes | `du -sh output/*` |
+
+### A worked example: what feature types are in a GTF?
+
+```bash
+GTF=/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf
+grep -v "^#" $GTF | cut -f3 | sort | uniq -c | sort -k1,1nr
+```
+
+Read it left to right: drop comment lines → keep column 3 (the feature
+type) → sort → count each distinct value → sort by count. You'll see
+lines like `exon`, `CDS`, `UTR`, `transcript`, `gene`, each with a count.
+
+## Variables, wildcards and loops
+
+```bash
+D=/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled   # a variable
+ls $D                        # use it with $
+ls $D/*_R1_001.fastq.gz      # * matches anything: all R1 files
+
+# do something to every file
+for f in $D/*_R1_001.fastq.gz; do
+  echo "$(basename $f): $(( $(zcat $f | wc -l) / 4 )) reads"
+done
+```
+
+`basename` strips the folder from a path; bagPipes uses it to rename
+outputs (`$(basename {input.R1} .fastq.gz)` also strips the ending).
+
+::: {.callout-tip}
+## Check your understanding
+
+1. You run `trim_galore ... 1> trim.out 2> trim.err` and want to see how many
+   reads had adapters. Which file do you open?
+2. Why is `zcat reads.fastq.gz | head` much faster than
+   `gunzip reads.fastq.gz; head reads.fastq`?
+3. What does `cut -f1 quant.sf | grep -c ENST` print?
+4. Your samplesheet looks fine in a text editor but bagPipes says the column
+   `Read1` doesn't exist. What would you check?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. `trim.err` probably. Trim Galore writes its progress and summary to stderr.
+   (It also writes a `_trimming_report.txt`.)
+2. `head` stops reading after 10 lines, and `zcat` stops when nothing is reading
+   from the pipe any more. `gunzip` decompresses the whole file to disk first.
+3. The number of lines whose first column contains `ENST`: the number of
+   transcripts in the file.
+4. Whether the columns are separated by tabs (`cat -A` shows `^I`), and whether
+   the header has stray spaces or Windows line endings (`^M`).
+:::
+:::

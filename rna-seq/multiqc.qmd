@@ -1,0 +1,82 @@
+# One report for everything: MultiQC {#sec-multiqc}
+
+**Rule:** `multiqc` · **Tool:** MultiQC 1.28 · **Input:** every per-sample
+output · **Output:** `QC/{runName}_multiqc_report.html` and
+`QC/{runName}_multiqc_data/`
+
+## The problem it solves
+
+By now each sample has a FastQC report per read, two trimming reports, a Salmon
+log and a flagstat file. With 12 samples that's dozens of files to open.
+**MultiQC** searches a folder for logs from tools it recognises, pulls out the
+numbers, and makes **one HTML page** with every sample side by side. Outliers
+are much easier to spot this way.
+
+## What bagPipes runs
+
+```bash
+module load multiqc/1.28
+multiqc -f output/* -o output/QC
+mv output/QC/multiqc_report.html output/QC/{runName}_multiqc_report.html
+mv output/QC/multiqc_data        output/QC/{runName}_multiqc_data
+```
+
+`-f` overwrites an old report. `output/*` means "look through everything in
+`output/`". This rule runs last in `RNApipeCore` because its inputs include
+every other output. Once it finishes, Snakemake deletes the `temp()` files
+(FastQC, trimming reports, trimmed FASTQ;
+see [the map](pipeline-map.qmd#the-output-folder)).
+
+## Reading the report, section by section
+
+Open the HTML file in a web browser. The top **General Statistics** table has one
+row per file. Then there's one section per tool, in pipeline order:
+
+| Section | Look at | Good sign | Red flag |
+|---|---|---|---|
+| **General Statistics** | Read counts, % aligned, % duplicates, GC % | Replicates look alike | One sample far off in any column |
+| **FastQC** | Per-base quality, adapter content, GC | All lines bunched together | One sample's line separate from the rest |
+| **Cutadapt / Trim Galore** | % bp trimmed, filtered reads | Low, similar across samples | One sample losing many reads |
+| **Salmon** | Mapping rate, fragment length | Similar across samples; 70–90 % mapped | One sample much lower |
+| **Samtools (flagstat)** | Mapped %, properly paired % | > 85–90 % | Big drop in one sample |
+
+The plots are interactive: hover to see sample names, click a sample in the
+toolbox to highlight it, and use *Export* to save a figure.
+
+::: {.callout-tip}
+## The most useful thing MultiQC tells you
+
+Not absolute numbers, but **which sample doesn't look like the others**. If
+one replicate has half the mapping rate, double the adapter content or a
+different GC curve, find out why before trusting its counts.
+:::
+
+## The data folder
+
+`{runName}_multiqc_data/` holds the same numbers as plain-text tables, e.g.
+`multiqc_general_stats.txt`. You can load these into R or Excel to make your
+own QC figures or a supplementary table.
+
+```bash
+column -t output/QC/*_multiqc_data/multiqc_general_stats.txt | less -S
+```
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Why does the `multiqc` rule list the trimmed FASTQ files as inputs, even
+   though MultiQC doesn't read FASTQ?
+2. One sample has a Salmon mapping rate of 40 % while the others are at 85 %.
+   Where would you look next?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. So Snakemake waits for trimming (and everything else) to finish before
+   running MultiQC, and keeps the temp files until then.
+2. Its FastQC (overrepresented sequences, GC content: rRNA or adapter
+   dimers?), its trimming report (how much was removed?) and its HISAT2
+   alignment rate (if that's also low: contamination or wrong species;
+   if it's high: intronic or intergenic reads, gDNA).
+:::
+:::

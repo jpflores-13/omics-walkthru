@@ -1,0 +1,122 @@
+# What happens after you submit your libraries {#sec-after-submission}
+
+You have made RNA-seq libraries, checked them on a TapeStation or
+Bioanalyzer, quantified them, and handed them to the sequencing core. A few
+days later you get an email with a folder of `.fastq.gz` files. This chapter
+covers what happened in between and what is in those files, because
+almost every decision later in the pipeline depends on it.
+
+## A library, in one picture
+
+An RNA-seq library is a tube of short DNA fragments. Each fragment is a piece
+of your RNA (converted to cDNA) with **adapters** ligated on both ends:
+
+```
+5'-[P5][i5 index][Read 1 primer site]=====cDNA insert=====[Read 2 primer site][i7 index][P7]-3'
+```
+
+- **P5 / P7** let the fragment stick to the flow cell.
+- **Index (barcode) sequences** (i7, and on dual-indexed kits i5) are short tags that are
+  different for each of your samples, so many libraries can share one lane.
+- **The insert** is the part you care about: a fragment of your RNA, usually
+  150 to 400 bp long.
+
+## Sequencing: reading the fragment from both ends
+
+On an Illumina instrument (NovaSeq, NextSeq), each fragment is copied into a
+cluster on the flow cell and read one base at a time.
+In **paired-end** sequencing the machine reads the insert from one end
+(**Read 1**, R1), then from the other end (**Read 2**, R2). bagPipes'
+`RNApipe` expects paired-end data.
+
+```
+insert:     5'-ACGTTGCA..............................GGATCCTA-3'
+Read 1:        ACGTTGCA.......>                                 (from the left)
+Read 2:                                  <.......TAGGATCC       (from the right, reverse complement)
+```
+
+Two numbers describe a run:
+
+- **Read length**, written as `2x50`, `2x100` or `2x150`: how many bases are read
+  from each end.
+- **Depth**: how many read pairs you got per sample. For gene-level
+  differential expression, 20 to 30 million pairs per sample is a common
+  target; the bagPipes test data has only 100,000 so it runs fast.
+
+::: {.callout-note}
+## What happens when the insert is shorter than the read?
+
+If the insert is 80 bp but the machine reads 150 bp, it reads through the
+whole insert and into the adapter on the other side. Those adapter bases are
+not from your RNA and will not match the genome. Removing them is the main
+job of [trimming](trimming.qmd).
+:::
+
+## Demultiplexing: one lane, many samples
+
+The sequencer reads the index sequences too. The core facility then runs a
+program (usually Illumina's `bcl2fastq` or `bcl-convert`) that sorts the reads
+by index into one pair of files per sample. This is **demultiplexing**. It is
+why the sample sheet you give the core, with the index you used for
+each tube, has to be right: if two samples share an index, their reads end up mixed together and cannot be separated.
+
+The output is named in Illumina's style:
+
+```
+IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz
+└────── your sample name ─────┘└S#┘└R1┘└001┘
+                                sample  read  chunk
+                                number  1 or 2
+```
+
+Sometimes a sample is sequenced on several lanes and you get `_L001_`,
+`_L002_` in the names. bagPipes treats each samplesheet row as **one pair of
+FASTQ files**, so combine lanes first (for example with `cat` on the `.gz`
+files, R1 with R1 and R2 with R2, in the same order).
+
+## Strandedness: which strand did the read come from?
+
+Genes sit on both strands of the genome. A **stranded** library keeps track
+of which strand the RNA came from; an **unstranded** library does not.
+
+Most stranded kits today (Illumina TruSeq Stranded, NEB Ultra II Directional,
+and others) use the **dUTP method**. The practical result:
+
+- **Read 1 is the reverse complement of the RNA** (antisense).
+- **Read 2 has the same sequence as the RNA** (sense).
+
+You need to know this later, when you build strand-specific signal tracks
+([Signal tracks](signal-tracks.qmd)). Salmon will also detect the library
+type for you and report it ([Salmon](salmon.qmd)).
+
+## What you should get back from the core
+
+| Thing | Why you need it |
+|---|---|
+| `*_R1_001.fastq.gz` and `*_R2_001.fastq.gz` per sample | The data |
+| Read length and instrument | To choose settings and interpret QC |
+| Library kit (stranded? which one?) | To interpret strand-specific tracks |
+| Reads per sample (often a demultiplexing report) | To see early whether a library failed |
+| `md5` checksums | To confirm files were not corrupted while copying |
+
+::: {.callout-tip}
+## Check your understanding
+
+1. You sequenced `2x100` and your average insert is 120 bp. Will Read 1 and
+   Read 2 overlap? Will either read run into adapter?
+2. Why can't the core separate two samples that were given the same index?
+3. In a dUTP library, a gene on the **+** strand produces reads. Which strand
+   does Read 1 align to?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. Yes, they overlap by 80 bp (100 + 100 − 120). Neither runs into adapter,
+   because each read (100 bp) is shorter than the insert (120 bp). Inserts
+   shorter than 100 bp would.
+2. Demultiplexing sorts reads only by the index sequence, so reads with the
+   same index look identical to the software.
+3. The **−** strand. Read 1 is antisense to the RNA, and the RNA came from
+   the + strand.
+:::
+:::

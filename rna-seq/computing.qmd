@@ -1,0 +1,138 @@
+# The computing environment {#sec-computing}
+
+Sequencing files are too large for a laptop, so the processing happens on
+**Longleaf**, UNC's computing cluster. This chapter covers the minimum you need:
+logging in, moving around, looking at files, and asking the cluster to run a job.
+
+## What a cluster is
+
+A cluster is many computers (**nodes**) that share one file system. You log
+in to a **login node**, which is shared by everyone and meant only for
+light work: editing files, copying, submitting jobs. The real work runs on
+**compute nodes**, which you request through a scheduler called **SLURM**.
+
+```{mermaid}
+flowchart LR
+  L["Your laptop"] -- ssh --> LN["Login node<br/>(light work only)"]
+  LN -- "sbatch / srun" --> S["SLURM scheduler"]
+  S --> C1["Compute node"]
+  S --> C2["Compute node"]
+  S --> C3["Compute node"]
+  C1 & C2 & C3 --- FS[("Shared storage<br/>/proj, /work, /users")]
+  LN --- FS
+```
+
+::: {.callout-warning}
+Don't run FastQC, Salmon, HISAT2 or anything else heavy directly on the login node.
+It slows the node down for everyone and the job may be killed. Use an
+interactive job (below) or `sbatch`.
+:::
+
+## Logging in
+
+From the Terminal app on a Mac (or PowerShell on Windows):
+
+```bash
+ssh your_onyen@longleaf.unc.edu
+```
+
+## Where things live
+
+| Location | What it is for |
+|---|---|
+| `/nas/longleaf/home/<onyen>` (`~`) | Your home folder; small, backed up. Scripts and configs |
+| `/work/users/j/d/jdoe` (first letter, second letter, onyen) | Large, fast scratch space for running pipelines. **Not backed up, and old files are purged** |
+| `/proj/phanstiel_lab/` | Lab project space: raw data, references, shared results |
+
+A sensible habit: keep raw FASTQs in `/proj`, run pipelines in `/work`, and copy
+the results you want to keep back to `/proj`.
+
+## Ten commands to start with
+
+```bash
+pwd                      # print working directory: where am I?
+ls -lh                   # list files, with human-readable sizes
+cd /proj/phanstiel_lab   # change directory
+cd ..                    # go up one level
+mkdir -p myproject/raw   # make a folder (and parents)
+cp file.txt backup/      # copy
+mv old.txt new.txt       # move or rename
+less file.txt            # page through a file (q to quit)
+zcat reads.fastq.gz | head -8   # first 8 lines of a gzipped file
+wc -l file.txt           # count lines
+```
+
+Press **Tab** to autocomplete file names. It saves typing and prevents typos.
+
+## Software: modules
+
+Longleaf has many versions of each tool installed, and you pick one with
+`module`. This is exactly what bagPipes does at the top of each rule:
+
+```bash
+module avail salmon          # what versions exist?
+module load salmon/1.10.3    # use this one
+salmon --version
+module list                  # what do I have loaded?
+module purge                 # unload everything
+```
+
+## Running jobs with SLURM
+
+### Interactive jobs: for trying things out
+
+```bash
+srun -p interact -n 1 --mem=8g -t 2:00:00 --pty bash
+```
+
+This gives you a shell on a compute node for two hours. Everything in the
+hands-on parts of this book can be run inside one of these.
+
+### Batch jobs: for real runs
+
+You write a script with `#SBATCH` lines describing what you need, and
+submit it. `RNApipe.sh` in bagPipes is one of these:
+
+```bash
+#! /bin/bash -login
+#SBATCH -J RNApipeCore      # job name
+#SBATCH -t 4320             # time limit in minutes (3 days)
+#SBATCH -p general          # partition (queue)
+#SBATCH --mem=2gb           # memory
+#SBATCH -o "%x-%j.out"      # log file: <jobname>-<jobid>.out
+```
+
+```bash
+sbatch RNApipe.sh            # submit
+squeue -u $USER              # what's running / waiting?
+sacct -j 123456 --format=JobID,JobName,State,Elapsed,MaxRSS   # how did it go?
+scancel 123456               # cancel a job
+```
+
+::: {.callout-note}
+## Why does `RNApipe.sh` only ask for 2 GB?
+
+That job only runs **Snakemake**, which acts as a manager. Snakemake then
+submits each step (FastQC, Salmon, ...) as its own SLURM job with its own
+memory request. You'll see dozens of jobs appear in `squeue`. See
+[Snakemake in plain language](snakemake.qmd).
+:::
+
+::: {.callout-tip}
+## Check your understanding
+
+1. You want to look at the first read in a FASTQ file. Is it OK to do that
+   on the login node?
+2. Where should a 200 GB pipeline output folder go while it is being made?
+3. What does `module load trim_galore/0.6.10` do?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. Yes. `zcat file.fastq.gz | head -4` is light work.
+2. `/work`, which is fast and large. Copy the results you want to keep to `/proj`
+   afterwards, because `/work` is purged.
+3. It puts that version of Trim Galore (and its dependency, Cutadapt) on your
+   `PATH` so the `trim_galore` command works in this shell.
+:::
+:::

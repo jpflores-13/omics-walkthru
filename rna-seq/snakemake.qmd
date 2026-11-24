@@ -1,0 +1,146 @@
+# Snakemake in plain language {#sec-snakemake}
+
+You could run every command in the previous chapters by hand, one sample at a
+time. With 24 samples and 8 steps that's 192 commands, and if one fails you
+have to remember which. **Snakemake** is a workflow manager: you describe
+each step once, and it works out what to run, in what order, for every sample,
+and what still needs redoing after a failure.
+
+## Rules: a recipe for making a file
+
+A Snakefile is a list of **rules**. Each rule says: *to make this output,
+take these inputs and run this command.* Here is bagPipes' `signal` rule,
+trimmed down:
+
+```python
+rule signal:
+    input:
+        bam = "output/align/{sampleName}_sorted.bam"
+    output:
+        "output/signal/unstranded/{sampleName}.bw"
+    params:
+        version = config['deeptoolsVers']        # "3.5.4" from RNAconfig.yaml
+    log:
+        err = 'output/logs/signal_{sampleName}.err',
+        out = 'output/logs/signal_{sampleName}.out'
+    shell:
+        """
+        module load deeptools/{params.version};
+        bamCoverage -b {input.bam} -o {output} 1> {log.out} 2> {log.err}
+        """
+```
+
+- **`{sampleName}`** is a **wildcard**: a blank that Snakemake fills in. To make
+  `output/signal/unstranded/IMGL_iMGL_WT_Ab_24h_1_1.bw`, it sets
+  `sampleName = IMGL_iMGL_WT_Ab_24h_1_1` and looks for the matching BAM.
+- **`{input.bam}`, `{output}`, `{params.version}`** in the shell command are
+  replaced by the real paths and values before it runs.
+- **`config[...]`** reads values from `config/RNAconfig.yaml`.
+
+## Working backwards from the goal
+
+Snakemake starts from the files you want, which are listed in `rule all`, and works
+**backwards**:
+
+```python
+rule all:
+    input:
+        "output/QC/IMGL_iMGL_WT_1_multiqc_report.html",
+        "output/quant/IMGL_iMGL_WT_1_tximport.rds"
+```
+
+> To make the MultiQC report, I need every BAM, bigWig, quant.sf, ... → to make
+> a BAM I need trimmed FASTQs → to make those I need the raw FASTQs → those
+> exist. Now run forwards.
+
+That chain of dependencies is the **DAG** (directed acyclic graph). bagPipes
+includes a picture of it:
+
+![The RNApipeCore rule graph, from the bagPipes repository (`dags/RNApipeCoreDAG.png`).](../img/RNApipeCoreDAG.png){fig-alt="Snakemake DAG of RNApipeCore: fastqc and trim from raw reads; quant, align from trim; signal and strandedSignal from align; multiqc and tximport at the end." width=80%}
+
+## Why this is useful
+
+- **Only what's needed is run.** If a file already exists and is newer than its
+  inputs, Snakemake skips it. Rerun after a failure and only the missing pieces
+  run.
+- **Things run in parallel.** All samples' FastQC jobs are independent, so
+  Snakemake submits them to SLURM at the same time.
+- **A failed step leaves no half-finished file.** Snakemake deletes the outputs
+  of a failed job, so a truncated BAM can't be mistaken for a finished one.
+- **`temp()` files** are deleted once nothing else needs them.
+
+## How bagPipes builds names
+
+The top of `RNApipeCore.snakefile` is plain Python that reads the
+samplesheet before any rule runs:
+
+1. **Read paths.** `Sequencing_Directory` + `Read1` (and `Read2`) gives each FASTQ's
+   full path.
+2. **Sample names.** The values in the `fileNamesFrom` columns are joined with
+   `_`: `IMGL` + `iMGL` + `WT` + `Ab` + `24h` + `1` + `1` →
+   `IMGL_iMGL_WT_Ab_24h_1_1`.
+3. **Run name.** `utils/namer.py` keeps only the columns that have the
+   **same value in every row**, in order. In the example, `Project`,
+   `Cell_Type`, `Genotype` and `Tech_Rep` are constant, so the run name is
+   `IMGL_iMGL_WT_1`. It prefixes the MultiQC report, the tximport RDS and the
+   copied samplesheet.
+4. **Copied samplesheet.** `output/{runName}_RNApipeSamplesheet.txt` is your
+   samplesheet with the full paths and an `sn` (sample name) column added.
+
+::: {.callout-warning}
+## One row = one pair of FASTQs = one unique name
+
+If two rows give the same sample name (for example two lanes of the same
+library with identical metadata), their files are passed to one job together
+and the rename steps break. Concatenate lanes before running, or add a column
+that tells them apart (such as `Seq_Rep`) to `fileNamesFrom`.
+:::
+
+## Snakemake on a cluster
+
+`RNApipe.sh` runs Snakemake with the **SLURM profile** in
+`profiles/slurm/config.yaml`, which says: submit each job with `sbatch`, run up
+to 100 at once, and use these defaults unless a rule says otherwise:
+
+```yaml
+executor: slurm
+jobs: 100
+default-resources:
+  slurm_partition: general
+  runtime: 4320          # minutes
+  cpus_per_task: 1
+  mem_mb_per_cpu: 64G    # rules override this: quant 20G, align 10G
+```
+
+So you'll see one small **manager** job (`RNApipeCore`, 2 GB) that stays
+alive for the whole run, and many **worker** jobs (`fastqc`, `trim`, `quant`,
+...) that come and go.
+
+## Things Snakemake leaves behind
+
+| Path | What it is |
+|---|---|
+| `.snakemake/` | Snakemake's bookkeeping: what ran, with which code, plus a lock |
+| `env/` | The Python virtual environment `RNApipe.sh` creates for Snakemake |
+| `output/logs/` | Each tool's stdout/stderr, one `.out`/`.err` pair per job |
+| `output/benchmarks/` | Run time and peak memory for each job (tab-separated) |
+| `RNApipeCore-<jobid>.out` | The manager job's log: Snakemake's own progress messages |
+
+::: {.callout-tip}
+## Check your understanding
+
+1. You delete `output/align/X_sorted.bam` and rerun. Which rules run again?
+2. The samplesheet has `Project = PRJ` in every row, and `Time` values `0h`
+   and `6h`. Is `Time` part of the run name?
+3. What does `{params.version}` become in the `signal` rule?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. `align` for sample X, and everything downstream of it that needs that BAM
+   (`signal`, `strandedSignal`, `multiqc`, and the merge rules). Note that
+   if the trimmed FASTQs were already deleted as `temp()`, `trim` reruns too.
+2. No. Only columns with a single value across all rows go into the run name.
+3. `3.5.4`, the `deeptoolsVers` value in `RNAconfig.yaml`.
+:::
+:::

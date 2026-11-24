@@ -1,0 +1,132 @@
+# Aligning to the genome with HISAT2 {#sec-alignment}
+
+**Rule:** `align` · **Tools:** HISAT2 2.2.1 (loaded as the `hisat-3n` module),
+samtools 1.22 · **Input:** trimmed R1 and R2 · **Output:**
+`align/{sample}_sorted.bam`, `.bam.bai`, `_stats.txt`
+
+## The problem it solves
+
+Salmon tells you *how much* of each transcript there is, but not *where* the
+reads sit on the genome. For that you need a real alignment: each read placed
+at a chromosome and position, with introns spliced out. Alignments let you:
+
+- **look** at your data in a genome browser (is the knockout exon really
+  gone? is there signal at an unannotated gene?);
+- make coverage **tracks** ([Signal tracks](signal-tracks.qmd));
+- check QC things Salmon can't see: intronic reads, chrM reads, strand.
+
+See [Alignment files](alignment-files.qmd) for what a BAM contains, and
+[Tools](tools-landscape.qmd#splice-aware-aligners) for why the aligner must be
+splice-aware.
+
+## How HISAT2 works, briefly
+
+1. **Index.** HISAT2 builds an index of the whole genome (a *global* index),
+   plus tens of thousands of small *local* indexes, each covering about 64 kb.
+   This makes it fast and memory-light (~8 GB for human).
+2. **Seed and extend.** For each read it finds a short exact match in the
+   global index, then extends it using the local index of that region.
+3. **Split across introns.** If the read stops matching part-way, HISAT2
+   looks downstream for the rest, preferring gaps that start with `GT` and end
+   with `AG` (the canonical splice motif). This gives a CIGAR like `45M1102N55M`.
+4. **Pair.** Both mates are aligned and checked to see that they face each other
+   at a sensible distance (a *proper pair*).
+
+## What bagPipes runs
+
+```bash
+module load hisat-3n/2.2.1
+module load samtools/1.22
+hisat2 -q -x {config.hisat2} -1 {sample}_R1_trimmed.fastq.gz -2 {sample}_R2_trimmed.fastq.gz \
+  | samtools view -u \
+  | samtools sort -o output/align/{sample}_sorted.bam
+samtools flagstat output/align/{sample}_sorted.bam > output/align/{sample}_stats.txt
+samtools index    output/align/{sample}_sorted.bam
+```
+
+Reading the pipe from left to right:
+
+| Piece | What it does |
+|---|---|
+| `hisat2 -q` | Input is FASTQ (`-q`) |
+| `-x {config.hisat2}` | The index *prefix*: the path plus the start of the file names (`.../hg38_gencode`, which stands for `hg38_gencode.1.ht2`, `.2.ht2`, ...) |
+| `-1`, `-2` | The trimmed pair |
+| `\| samtools view -u` | Turn HISAT2's SAM text into BAM; `-u` = uncompressed, because it is only passing through |
+| `\| samtools sort -o` | Sort by position and write the compressed BAM |
+| `samtools flagstat` | Summary counts → `_stats.txt` |
+| `samtools index` | Make the `.bai` |
+
+The rule asks for 10 GB of memory.
+
+::: {.callout-note}
+## Defaults bagPipes keeps
+
+bagPipes gives HISAT2 no extra options, so:
+
+- **Strandedness is not set** (`--rna-strandness`). Alignment is the same
+  either way; only the `XS` tag interpretation differs.
+- **Multi-mappers are kept**, as secondary alignments (FLAG 256) with low
+  MAPQ. Nothing is filtered by MAPQ.
+- **Duplicates are not marked or removed.** That's normal for RNA-seq.
+- **No known-splice-site file** is given; HISAT2 finds junctions itself.
+:::
+
+::: {.callout-important}
+## Where is HISAT2's alignment rate?
+
+HISAT2 prints its summary ("... overall alignment rate") to **stderr**. In the
+pipe above, the `1> ... 2> ...` log redirections in the rule apply only to
+the **last** command, `samtools sort`. So HISAT2's summary isn't in
+`output/logs/align_{sample}.err`; it's in that job's SLURM log. Depending
+on the Snakemake SLURM plugin version, that log is under `output/logs_slurm/`
+or `.snakemake/slurm_logs/rule_align/`. The `_stats.txt`
+(flagstat) has the same information in another form.
+:::
+
+## What good looks like
+
+From `_stats.txt` and the HISAT2 summary:
+
+| Metric | Typical for poly-A human/mouse | Worry if |
+|---|---|---|
+| Overall alignment rate | > 85–90 % | < 70 %: contamination, wrong species, adapter left in, degraded RNA |
+| Properly paired | > 85 % | Much lower than mapped %: wrong pairing, very short inserts |
+| Aligned concordantly > 1 time | 5–15 % | Very high: rRNA (many copies) or repeats |
+
+## Try it
+
+```bash
+module load samtools/1.22
+B=output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam
+cat output/align/IMGL_iMGL_WT_Ab_24h_1_1_stats.txt
+samtools idxstats $B | sort -k3,3nr | head        # which chromosomes have the most reads?
+samtools view $B | awk '$6 ~ /N/' | wc -l          # how many alignments are spliced?
+samtools view $B | awk '$6 ~ /N/' | head -3 | cut -f1-6
+grep -r "overall alignment rate" output/logs_slurm/ .snakemake/slurm_logs/ 2>/dev/null
+```
+
+Then load the BAM and `.bai` into IGV and look at a highly expressed gene
+such as `ACTB` or `GAPDH`. You should see reads stacked on exons and thin
+lines joining them across introns.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Why does bagPipes pipe HISAT2 straight into `samtools sort` instead of
+   writing a SAM file first?
+2. What's the difference between `-x .../hg38_gencode` and the folder
+   `.../hisat2/`?
+3. You see many reads in introns of a gene in IGV. Name two reasons.
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. A SAM file would be huge and written only to be read again; the pipe skips
+   that disk work.
+2. `-x` needs the index **prefix** (folder + start of the file names), not just
+   the folder. HISAT2 adds `.1.ht2`, `.2.ht2`, etc.
+3. Unspliced pre-mRNA (expected, more so in total RNA or nuclear RNA),
+   intron retention, or contaminating genomic DNA (then you'd also see reads
+   between genes, on both strands).
+:::
+:::

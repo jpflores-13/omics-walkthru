@@ -1,0 +1,91 @@
+# Command cheat sheet {#sec-cheatsheet}
+
+## Longleaf and SLURM
+
+```bash
+ssh onyen@longleaf.unc.edu
+srun -p interact -n 1 --mem=8g -t 2:00:00 --pty bash    # interactive job
+sbatch script.sh                                          # submit
+squeue -u $USER                                           # my jobs
+sacct -j JOBID --format=JobID,JobName,State,Elapsed,MaxRSS
+scancel JOBID
+module avail <tool>; module load <tool>/<version>; module list
+```
+
+## Files and text
+
+```bash
+pwd; ls -lh; cd dir; mkdir -p dir; cp a b; mv a b; du -sh dir
+less -S file          # page, no wrap (q quits, / searches)
+head -n 20 file; tail -n 20 file; wc -l file
+cut -f1,3 file; sort -k2,2n file; uniq -c; grep -w word file
+awk '$5 > 100' file; column -t file
+cat -A file           # show tabs (^I) and line ends ($, ^M$)
+md5sum file; md5sum -c checksums.md5
+```
+
+## Compressed files
+
+```bash
+zcat f.gz | head; zless f.gz; zgrep pattern f.gz
+gzip f; gunzip f.gz; gzip -c f > f.gz; gzip -t f.gz
+```
+
+## FASTQ / FASTA
+
+```bash
+echo $(( $(zcat R1.fastq.gz | wc -l) / 4 ))        # reads
+zcat R1.fastq.gz | awk 'NR%4==2' | head             # sequences only
+seqkit stats *.fastq.gz
+samtools faidx genome.fa; samtools faidx genome.fa chr1:1000-2000
+grep -c ">" transcripts.fa
+```
+
+## GTF / BED
+
+```bash
+grep -v "^#" x.gtf | cut -f3 | sort | uniq -c       # feature types
+awk '$3=="gene"' x.gtf | grep -w 'gene_name "GAPDH"'
+sort -k1,1 -k2,2n x.bed > x.sorted.bed
+bedtools intersect -a a.bed -b b.bed -u
+bedtools getfasta -fi genome.fa -bed x.bed -s
+cut -f1,2 genome.fa.fai > genome.chrom.sizes
+```
+
+## BAM
+
+```bash
+samtools view -H x.bam                 # header
+samtools view x.bam | head             # alignments
+samtools view x.bam chr7:5500000-5600000   # region (needs .bai)
+samtools view -c -F 260 x.bam          # primary mapped reads
+samtools flagstat x.bam; samtools idxstats x.bam
+samtools flags 163                     # decode a FLAG
+samtools sort -o y.bam x.bam; samtools index y.bam
+samtools merge out.bam a.bam b.bam
+```
+
+## bigWig
+
+```bash
+bigWigInfo x.bw
+bigWigToBedGraph x.bw stdout -chrom=chr7 -start=5527000 -end=5531000
+bamCoverage -b x.bam -o x.bw --normalizeUsing CPM --binSize 10
+```
+
+## bagPipes
+
+```bash
+sbatch RNApipe.sh                                    # run
+./unlock.sh rna                                      # after a killed run
+grep -A 15 "Error in rule" RNApipeCore-*.out         # what failed
+snakemake -s workflows/RNApipeCore.snakefile --configfile config/RNAconfig.yaml -n   # dry run (in env/)
+```
+
+## R
+
+```r
+txi <- readRDS("output/quant/<runName>_tximport.rds")
+dds <- DESeq2::DESeqDataSetFromTximport(txi, colData = coldata, design = ~ condition)
+dds <- DESeq2::DESeq(dds); res <- DESeq2::results(dds)
+```

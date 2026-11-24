@@ -1,0 +1,87 @@
+# Checking raw reads with FastQC {#sec-fastqc}
+
+**Rule:** `fastqc` · **Tool:** FastQC 0.12.1 · **Input:** raw R1 and R2 FASTQ ·
+**Output:** one HTML report and one zip per read file
+
+## The problem it solves
+
+Before spending hours aligning, you want to know whether the reads look as they should:
+are the base qualities good, is there adapter, is one sequence present
+millions of times? **FastQC** reads (a sample of) each FASTQ file and
+draws a set of standard plots. It doesn't change your data.
+
+## What bagPipes runs
+
+```bash
+module load fastqc/0.12.1
+fastqc -o output/QC  sample_R1_001.fastq.gz  sample_R2_001.fastq.gz
+# then renames the outputs to {sampleName}_R1_fastqc.html etc.
+```
+
+In bagPipes, FastQC runs on the **raw** reads, before trimming. To see the
+effect of trimming you compare these plots with the Trim Galore numbers in
+MultiQC.
+
+## Reading a FastQC report
+
+Each module gets a green tick, orange warning, or red cross. These marks
+assume random genomic DNA, so **many "fails" are normal for RNA-seq**.
+Interpret them; don't just count them.
+
+| Module | What it shows | Normal for RNA-seq | Worry if... |
+|---|---|---|---|
+| **Per base sequence quality** | Box plot of quality at each position | High (> Q30) throughout, a gentle drop at the 3' end | Quality collapses mid-read, or R2 is much worse than R1 |
+| **Per sequence quality scores** | Distribution of average read quality | One peak at high quality | A second peak at low quality |
+| **Per base sequence content** | % A/C/G/T at each position | **Wobbly first ~10–12 bases** (random-hexamer priming bias): FastQC flags it, ignore it | Strong bias across the whole read |
+| **Per sequence GC content** | GC % distribution vs a theoretical curve | Roughly bell-shaped; may be shifted or have shoulders | A sharp extra peak (contamination, rRNA, adapter dimer) |
+| **Sequence duplication levels** | How often sequences repeat | **High duplication is expected**: highly expressed genes give many identical reads | Almost everything duplicated in a low-input library |
+| **Overrepresented sequences** | Sequences making up > 0.1 % of reads | A few, often mitochondrial or rRNA | Adapter or primer dimers near the top |
+| **Adapter content** | % of reads with adapter at each position | Rising toward the 3' end in libraries with short inserts | High adapter early in the read (very short inserts / dimers) |
+
+::: {.callout-important}
+## The two RNA-seq "fails" to ignore
+
+1. **Per base sequence content** in the first ~12 bases.
+2. **Sequence duplication levels.** In RNA-seq, duplication mostly reflects
+   expression, not PCR. bagPipes does not remove duplicates for RNA-seq.
+:::
+
+## Try it
+
+```bash
+srun -p interact -n 1 --mem=4g -t 1:00:00 --pty bash
+module load fastqc/0.12.1
+mkdir -p ~/rnaseq_practice/fastqc
+cd ~/rnaseq_practice
+D=/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled
+fastqc -o fastqc $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz \
+                 $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R2_001.fastq.gz
+ls fastqc
+```
+
+Copy the `.html` file to your laptop to open it (run this **on your laptop**):
+
+```bash
+scp your_onyen@longleaf.unc.edu:~/rnaseq_practice/fastqc/*.html .
+```
+
+::: {.callout-tip}
+## Check your understanding
+
+1. FastQC gives *Sequence duplication levels* a red cross. Should you
+   re-make the library?
+2. The *Adapter content* plot rises from 0 % at base 60 to 15 % at base 100.
+   What does that say about your inserts?
+3. Why does bagPipes run FastQC before trimming rather than after?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. Probably not. Duplication in RNA-seq largely reflects highly expressed
+   genes. Compare across samples; one outlier is more telling than the flag.
+2. About 15 % of fragments have inserts shorter than ~100 bp, so the read
+   runs into adapter. Trimming will remove it.
+3. To see the data as it came off the sequencer. Trim Galore's report
+   (in MultiQC) then shows how much it removed.
+:::
+:::

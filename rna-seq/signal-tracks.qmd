@@ -1,0 +1,103 @@
+# Making signal tracks with deepTools {#sec-signal}
+
+**Rules:** `signal`, `strandedSignal` · **Tool:** deepTools 3.5.4
+(`bamCoverage`) · **Input:** sorted BAM · **Output:**
+`signal/unstranded/{sample}.bw`, and if `stranded: True`,
+`signal/stranded/{sample}_fwd.bw` and `_rev.bw`
+
+## The problem it solves
+
+A BAM file has every read, which is too much to look at across a whole
+chromosome. A **coverage track** reduces it to one number per small window
+of genome: how many reads overlap here. Saved as a **bigWig**
+([formats](annotation-files.qmd#bigwig-bedgraph-made-fast)), it loads instantly in IGV
+or the UCSC browser, and it's what you use for figures and metagene plots.
+
+```
+reads (BAM):     ▬▬▬   ▬▬▬▬
+                   ▬▬▬▬▬  ▬▬▬       ▬▬▬
+                     ▬▬▬▬▬▬
+genome bins:   |  1 |  3 |  3 |  1 |  0 |  1 |    <- one value per 50 bp bin
+track (bigWig):   ▁    ▇    ▇    ▁         ▁
+```
+
+## What bagPipes runs
+
+```bash
+module load deeptools/3.5.4
+
+# rule signal: all reads
+bamCoverage -b {sample}_sorted.bam -o signal/unstranded/{sample}.bw
+
+# rule strandedSignal: one track per gene strand
+bamCoverage --filterRNAstrand forward -b {sample}_sorted.bam -o signal/stranded/{sample}_fwd.bw
+bamCoverage --filterRNAstrand reverse -b {sample}_sorted.bam -o signal/stranded/{sample}_rev.bw
+```
+
+No other options are given, so deepTools' defaults apply:
+
+| Default | Consequence |
+|---|---|
+| `--binSize 50` | One value per 50 bp |
+| `--normalizeUsing None` | Values are **raw read counts per bin**, **not** scaled for sequencing depth |
+| No MAPQ filter | Multi-mapping reads contribute |
+| One thread | |
+
+::: {.callout-warning}
+## The tracks are not depth-normalised
+
+A sample with twice as many reads will look about twice as tall. When
+comparing samples in IGV, don't read differences in height as differences in
+expression. Use DESeq2 for that. If you need comparable tracks, rerun
+`bamCoverage` with `--normalizeUsing CPM` (or BPM), or with scale factors from
+DESeq2 (`--scaleFactor`).
+:::
+
+## Which strand is which? {#which-strand-is-which}
+
+In a dUTP library, **read 1 aligns to the opposite strand from the gene**, and
+read 2 to the same strand ([After submission](after-submission.qmd#strandedness-which-strand-did-the-read-come-from)).
+deepTools' `--filterRNAstrand` handles this for you, **assuming a dUTP
+library**:
+
+| File | Keeps reads from genes on | So it shows genes like |
+|---|---|---|
+| `{sample}_fwd.bw` | the **+** strand | *GAPDH* (+ strand) |
+| `{sample}_rev.bw` | the **−** strand | *ACTB* (− strand) |
+
+Quick check after a run: load both tracks in IGV and go to *GAPDH*. The signal
+should be almost entirely in `_fwd`. If it's in `_rev`, the kit is
+read-1-sense (`ISF` in Salmon), so swap the labels in your head (or the
+files). If it's split evenly, the library is unstranded, and the stranded tracks
+are meaningless.
+
+::: {.callout-note}
+Some antisense signal is real biology (antisense transcription, overlapping
+genes), so don't expect exactly 0 on the "wrong" track.
+:::
+
+## Viewing tracks in IGV
+
+1. Copy the `.bw` files to your computer (they're small, typically tens of MB).
+2. IGV → genome **hg38** → *File → Load from File*.
+3. Right-click a track → *Set Data Range* or select several and *Group
+   Autoscale* to put them on the same scale.
+4. Add the GENCODE genes track (on by default in IGV's hg38) to see exons.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Sample A has 40 M reads and sample B 20 M. In IGV, A's track is twice as high at
+   every gene. Is A expressing everything twice as much?
+2. Why is `GAPDH` a good gene for checking stranded tracks?
+3. What would you change to get one value per 10 bp?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. No. bagPipes' tracks aren't depth-normalised, so this is just the 2× depth.
+2. It's highly expressed everywhere, on a known strand (+), and has no
+   strongly expressed antisense partner, so the answer is obvious.
+3. Add `--binSize 10` to the `bamCoverage` commands (bigger files, finer detail).
+:::
+:::

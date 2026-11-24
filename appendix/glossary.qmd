@@ -1,0 +1,63 @@
+# Glossary {#sec-glossary}
+
+| Term | Meaning |
+|---|---|
+| **Adapter** | Known DNA sequence ligated to both ends of each library fragment so it can be sequenced. Removed by trimming |
+| **Alignment** | Placing a read at the position in the reference it most likely came from |
+| **ASCII / Phred+33** | How FASTQ stores quality scores: each Q is written as the character with code Q + 33 |
+| **BAM** | Compressed binary form of a SAM alignment file. Needs a `.bai` index for random access |
+| **BED** | Tab-separated interval file; 0-based, half-open. BED3/BED6/BED12 by number of columns |
+| **bedGraph** | BED3 + a value per interval; plain-text coverage |
+| **bgzip** | Block gzip; gzip-compatible but allows random access with an index |
+| **bigWig** | Binary, indexed, multi-resolution coverage track for genome browsers |
+| **Binary file** | File meant for programs, not people; looks like garbage in `less` |
+| **Biological replicate** | Independent samples (different cultures, animals, differentiations) of the same condition |
+| **CIGAR** | String in a SAM/BAM line describing how a read aligns (`M`, `I`, `D`, `N`, `S`, ...) |
+| **Cluster (HPC)** | Many computers sharing storage, managed by a scheduler (Longleaf) |
+| **Coordinate system** | 0-based (BED) or 1-based (GTF, SAM) counting of genome positions |
+| **Count matrix** | Table of reads per gene (rows) per sample (columns); the input to DESeq2 |
+| **DAG** | Directed acyclic graph: the dependency chart of a workflow |
+| **Demultiplexing** | Sorting pooled reads into per-sample files by their index sequence |
+| **Depth** | Number of reads (or read pairs) sequenced for a sample |
+| **DESeq2** | R package for differential expression from counts (negative binomial model) |
+| **dUTP library** | The most common stranded library chemistry; read 1 is antisense to the RNA |
+| **Duplicate** | Reads with identical start/end positions; in RNA-seq, often from highly expressed genes, not PCR |
+| **EM (expectation-maximisation)** | The iterative statistical method Salmon uses to split ambiguous reads among isoforms |
+| **Exon / intron** | Parts of a gene kept in / spliced out of the mature RNA |
+| **FASTA** | Text format of sequences with `>` headers; no qualities. References |
+| **FASTQ** | Text format of reads: 4 lines per read (name, sequence, `+`, quality) |
+| **FLAG** | Number in a SAM/BAM line encoding read properties (paired, reverse, read 1/2, secondary...) |
+| **Genome build** | One version of a reference genome (GRCh38/hg38, GRCm39/mm39) |
+| **GTF / GFF** | Gene annotation tables: where genes, transcripts and exons are; 1-based |
+| **gzip / .gz** | Standard compression; `zcat`, `zless` read it without unpacking |
+| **Index (aligner)** | A pre-built searchable form of a reference (Salmon, HISAT2) |
+| **Index (barcode)** | Short sample-specific sequence in the adapter used for demultiplexing |
+| **Index (file)** | Small side file (`.bai`, `.fai`, `.tbi`) that lets tools jump to a region |
+| **Insert** | The part of a library fragment between the adapters: your RNA's sequence |
+| **Isoform / transcript** | One of the possible spliced RNAs from a gene |
+| **Login node** | Shared entry computer on a cluster; light work only |
+| **MAPQ** | Mapping quality: aligner's confidence that a read is in the right place |
+| **Module** | Longleaf's way of choosing software versions (`module load salmon/1.10.3`) |
+| **Multi-mapper** | A read that aligns equally well to several places |
+| **Paired-end** | Sequencing each fragment from both ends (R1 and R2) |
+| **Pipe (`\|`)** | Sends one command's output straight into the next command |
+| **Plain text** | A file of readable characters; viewable with `less` |
+| **Primary / secondary alignment** | The chosen best location of a read / the other possible locations |
+| **Proper pair** | Both mates aligned facing each other at a sensible distance |
+| **Pseudoalignment / selective alignment** | Fast mapping of reads to compatible transcripts without full base-level alignment (kallisto / Salmon) |
+| **Read 1 / Read 2 (R1/R2)** | The two reads of a paired-end fragment, from opposite ends |
+| **Rule** | One step of a Snakemake workflow: inputs, outputs, command |
+| **SAM** | Text alignment format; 11 required columns + tags |
+| **Samplesheet** | Tab-separated table describing each sample and its FASTQ files |
+| **Soft clip** | Read bases kept in the BAM but not aligned (`S` in CIGAR) |
+| **Splice-aware aligner** | Aligner that can split a read across an intron (HISAT2, STAR) |
+| **Stranded library** | Library that preserves which DNA strand the RNA came from |
+| **SLURM** | The job scheduler on Longleaf (`sbatch`, `squeue`, `scancel`) |
+| **stdout / stderr** | A program's two output streams: results and messages |
+| **Technical replicate** | Re-sequencing or re-prepping the same biological sample |
+| **TPM** | Transcripts per million: length- and depth-normalised abundance; sums to 10^6^ per sample |
+| **Trimming** | Removing adapter and low-quality bases from read ends |
+| **tximeta** | Newer R package that reads Salmon output like tximport but also identifies the transcriptome release and returns a `SummarizedExperiment` with gene coordinates |
+| **tximport** | R package that sums Salmon transcript estimates to genes for DESeq2 |
+| **Wildcard (Snakemake)** | `{sampleName}`-style placeholder filled in per sample |
+| **Wildcard (shell)** | `*` in a path, matching any characters (`*.fastq.gz`) |

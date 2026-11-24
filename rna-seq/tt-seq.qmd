@@ -1,0 +1,89 @@
+# How TT-seq / TTchem-seq processing differs {#sec-tt-seq}
+
+TT-seq libraries look like RNA-seq libraries: stranded, paired-end, Illumina
+reads of RNA fragments. But they measure something different, and that changes
+several steps of the processing. This chapter goes through `RNApipe` step by
+step and says what changes for TT-seq and why. The lab's TT-seq pipeline is
+[**TTpipe**](https://jpflores-13.github.io/TTpipe); its
+[From Reads to Results](https://jpflores-13.github.io/TTpipe/journey.html)
+chapter covers the biology in more depth.
+
+## What's different about the RNA
+
+- **RNA-seq** sequences the whole RNA pool. It is dominated by **mature,
+  spliced mRNA**, which is the balance of synthesis and decay over hours.
+- **TT-seq / TTchem-seq** feeds cells **4-thiouridine (4sU)** for a short pulse
+  (minutes), then biotinylates and pulls down only the labelled RNA. What you
+  sequence is RNA **made during the pulse**, which is mostly **unspliced
+  precursor**. TTchem-seq is a variant with a different chemistry for
+  the labelling and pull-down; the reads are processed the same way.
+
+The consequence for the data: **reads fall across the whole transcribed
+region, introns included**, and often run past the end of the gene. In RNA-seq
+an intronic read is mostly noise. In TT-seq it's signal: direct evidence the
+gene was being transcribed.
+
+## Step by step
+
+| Step | RNA-seq (bagPipes RNApipe) | TT-seq (TTpipe) | Why it changes |
+|---|---|---|---|
+| Read QC | FastQC | FastQC (same) | |
+| Trimming | Trim Galore, always | Optional (fastp), off by default | STAR soft-clips leftover adapter; TTpipe follows its source guide |
+| **Quantification** | **Salmon** on the transcriptome | **None.** No pseudoaligner | Salmon only knows **mature transcripts**. Intronic reads have nowhere to go, so most of the signal would be lost ([what pseudoaligners assume](tools-landscape.qmd#pseudoaligners-lightweight-mappers)) |
+| Alignment | HISAT2, for tracks and QC only | **STAR**, and it's the basis of **everything**, counts included | All numbers now come from genome alignments |
+| MAPQ filter | None | Keep pairs with **MAPQ ≥ 10** | Counting from the BAM, so multi-mappers must be removed or they'd be counted in several places |
+| Duplicates | Kept | **Removed** (Picard) | Pull-down libraries are often low-input and PCR-heavy; TTpipe follows the guide's setting |
+| **Strand** | Used for optional tracks | **Central**: every BAM split into forward and reverse strand | Nascent transcription is often bidirectional (promoters, enhancers) and antisense; overlapping genes on opposite strands must be told apart |
+| **Counting** | Salmon/tximport, **exons** via transcripts | **HTSeq-count on the whole gene body** (`--type gene`: exons **and introns**), per strand | Intronic reads are signal; counting only exons would throw most of it away |
+| Isoforms | Resolved by Salmon, summed by tximport | Not resolved: **one count per gene** | A gene-body count can't tell isoforms apart |
+| Tracks | `bamCoverage`, raw counts, per sample (+ merged) | `bamCoverage` with **scale factors** from merged replicates, per strand | Tracks are compared across conditions, so depth must be evened out |
+| Normalisation for DE | DESeq2 size factors | DESeq2 size factors, **with a caveat** (below); optional spike-in module | |
+| Statistics | (after the pipeline) DESeq2 | DESeq2, GSEA and a Sankey of the time course, inside the pipeline | TT-seq is usually a time course after a perturbation |
+
+## The normalisation caveat
+
+DESeq2 (and any library-size normalisation) assumes **most genes don't
+change**. In steady-state RNA-seq that's usually reasonable. In TT-seq the
+perturbations people study (degrading a transcription factor, inhibiting
+the polymerase) can **lower transcription of almost every gene**. Library-size
+normalisation then hides the global drop, because every library is scaled back
+to the same total.
+
+The fix is a **spike-in**: labelled RNA from another species (e.g. *S. pombe*
+or *Drosophila*) added in a fixed amount per sample, used to set the scale.
+Without one, "transcription went down" means "went down **relative to other
+genes**". TTpipe states this in its QC report and has an optional,
+experimental spike-in module.
+
+## QC numbers mean different things
+
+| Metric | Healthy RNA-seq | Healthy TT-seq |
+|---|---|---|
+| Reads in introns | Low (a few to ~20 %) | **High**: often the majority |
+| Salmon mapping rate | 70–90 % | Not used (it would look terrible, and that's expected) |
+| Duplicates | Mostly from expression; ignored | Watched: very high values point to low input / over-amplification |
+| Sense % (reads on the gene's strand) | High for stranded kits | High, but **antisense signal is real biology**, so not ~100 % |
+| rRNA % | Low with poly-A selection | Can matter: labelled RNA isn't poly-A selected |
+| Reads past the gene end | Few | Expected (read-through transcription before termination) |
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Why can't TTpipe just use Salmon and tximport like RNApipe?
+2. A colleague counts TT-seq reads with featureCounts on exons only. What do they
+   lose?
+3. After degrading a general transcription factor, DESeq2 says only 300 genes
+   go down. Should you believe that transcription barely changed?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. Most TT-seq reads are from unspliced precursor RNA, including introns.
+   Salmon's index contains only mature transcripts, so those reads would be
+   unmapped or wrongly assigned.
+2. All the intronic reads, which are most of the nascent signal. Genes are
+   also weighted by how much of their length happens to be exonic.
+3. Not without a spike-in. A global drop is normalised away, so DESeq2 only
+   reports genes that changed **relative to the rest**.
+:::
+:::

@@ -1,0 +1,240 @@
+# Genes and coordinates: GTF, BED, bedGraph and bigWig {#sec-annotation-files}
+
+A FASTA file says *what* the genome is. The files in this chapter say *where*
+things are: genes, exons, or how many reads pile up at each position. All of
+them describe **intervals**: a chromosome, a start and an end.
+
+## Genomic coordinates (read this first)
+
+There are two ways to count positions, and mixing them up is one of the
+most common bugs in genomics.
+
+```
+bases:              A   C   G   T   A   C
+1-based (GTF, SAM): 1   2   3   4   5   6      "the region 2-4" = C G T
+0-based (BED):    0   1   2   3   4   5   6    "the region 1-4" = C G T  (start..end, end not included)
+```
+
+| System | Used by | First base | Interval `start`–`end` covers |
+|---|---|---|---|
+| **1-based, closed** | GTF/GFF, SAM/BAM, VCF, IGV's location box, UCSC's web display | 1 | `start` through `end`, both included |
+| **0-based, half-open** | BED, bedGraph, bigWig, BAM internally, most programming languages | 0 | from `start` up to but **not** including `end` |
+
+Rule of thumb: **BED start = GTF start − 1; the end is the same.** A
+region's length in BED is simply `end − start`.
+
+## GTF: the gene annotation
+
+A **GTF** (Gene Transfer Format; also called GFF2) lists every gene,
+transcript, exon, CDS and UTR, with its position. bagPipes uses GENCODE's GTF
+(`gencode.v49.primary_assembly.annotation.gtf`).
+
+### What it looks like
+
+```bash
+grep -v "^#" gencode.v49.primary_assembly.annotation.gtf | head -3 | less -S
+```
+
+```
+chr1  HAVANA  gene        11121  24894  .  +  .  gene_id "ENSG00000290825.2"; gene_type "lncRNA"; gene_name "DDX11L2"; level 2; ...
+chr1  HAVANA  transcript  11426  14409  .  +  .  gene_id "ENSG00000290825.2"; transcript_id "ENST00000832824.1"; gene_type "lncRNA"; gene_name "DDX11L2"; transcript_type "lncRNA"; ...
+chr1  HAVANA  exon        11426  11671  .  +  .  gene_id "ENSG00000290825.2"; transcript_id "ENST00000832824.1"; exon_number 1; ...
+```
+
+(Columns are separated by tabs, shown here as spaces. Exact IDs and
+positions differ between releases.)
+
+### The nine columns
+
+| # | Column | Example | Meaning |
+|---|---|---|---|
+| 1 | seqname | `chr1` | Chromosome. Must match the genome FASTA names |
+| 2 | source | `HAVANA`, `ENSEMBL` | Who made the annotation |
+| 3 | feature | `gene`, `transcript`, `exon`, `CDS`, `UTR`, `start_codon`, `stop_codon` | What kind of thing this line is |
+| 4 | start | `11426` | First base, **1-based** |
+| 5 | end | `11671` | Last base, included |
+| 6 | score | `.` | Unused here (`.` means empty) |
+| 7 | strand | `+` / `-` | Which DNA strand the gene is on |
+| 8 | frame | `.`, `0`, `1`, `2` | Reading frame, only for CDS lines |
+| 9 | attributes | `gene_id "..."; transcript_id "...";` | `key "value";` pairs |
+
+### The hierarchy (simplified)
+
+```
+gene      ENSG00000141510  TP53   ───────────────────────────────────────────
+transcript  ENST00000269305  TP53-201   ▇▇▇───▇▇───▇▇▇▇───▇───▇▇▇▇▇
+transcript  ENST00000413465  TP53-202   ▇▇▇───▇▇────────────▇───▇▇
+exon          (one line per box ▇)
+```
+
+One **gene** has one or more **transcripts** (isoforms); each transcript is
+made of **exons**. Each line repeats its parents' IDs in column 9, which is how
+`tximport` knows which transcripts belong to which gene.
+
+### Attributes worth knowing (GENCODE)
+
+| Attribute | Example | Use |
+|---|---|---|
+| `gene_id` | `ENSG00000141510.18` | Stable gene ID, with a **version** after the dot |
+| `transcript_id` | `ENST00000269305.9` | Stable transcript ID |
+| `gene_name` | `TP53` | Human-readable symbol. Not unique, can change between releases |
+| `gene_type` | `protein_coding`, `lncRNA`, `miRNA`, `rRNA`, `Mt_rRNA` | Biotype; useful for filtering |
+| `tag` | `basic`, `Ensembl_canonical`, `MANE_Select` | Marks the "main" or best-supported transcripts |
+
+::: {.callout-note}
+## Why IDs instead of gene names?
+
+`gene_name` is easy to read, but several genes can share a name, and names
+change. Pipelines work with `gene_id` (ENSG...) and add names at the end. When
+you compare across releases, strip the version (`ENSG00000141510.18` →
+`ENSG00000141510`).
+:::
+
+### GFF3, GTF's cousin
+
+**GFF3** has the same nine columns, but column 9 is written
+`ID=...;Parent=...;Name=...`. Tools usually ask for one or the other.
+GENCODE and Ensembl provide both, so download the one your tool expects.
+
+### Useful things to do with a GTF
+
+```bash
+GTF=gencode.v49.primary_assembly.annotation.gtf
+
+# How many genes of each type?
+awk '$3 == "gene"' $GTF | grep -o 'gene_type "[^"]*"' | sort | uniq -c | sort -k1,1nr | head
+
+# Find one gene
+awk '$3 == "gene"' $GTF | grep -w 'gene_name "GAPDH"'
+
+# Make a BED file of genes (note: start - 1 to convert to 0-based!)
+awk 'BEGIN{OFS="\t"} $3 == "gene" {
+       match($0, /gene_name "[^"]*"/); name = substr($0, RSTART+11, RLENGTH-12)
+       print $1, $4-1, $5, name, ".", $7 }' $GTF > genes.bed
+```
+
+In R, `rtracklayer::import("file.gtf")` reads a GTF into a `GRanges`
+object, and `GenomicFeatures::makeTxDbFromGFF()` (what bagPipes'
+`txImporter.R` uses) builds a transcript database from it.
+
+## BED: simple intervals
+
+A **BED** file is the simplest interval format: one interval per line,
+tab-separated, **0-based half-open**. Only the first three columns are
+required; the rest are optional but must come in order.
+
+```
+chr7   5527147   5530601   ACTB    0   -
+chr12  6534511   6538374   GAPDH   0   +
+```
+
+### The columns
+
+| # | Name | Meaning |
+|---|---|---|
+| 1 | chrom | Chromosome |
+| 2 | chromStart | Start, **0-based** |
+| 3 | chromEnd | End, not included |
+| 4 | name | A label |
+| 5 | score | 0–1000 (some browsers shade by it) |
+| 6 | strand | `+`, `-` or `.` |
+| 7 | thickStart | Where the "thick" part starts (for genes: the start codon) |
+| 8 | thickEnd | Where it ends (stop codon) |
+| 9 | itemRgb | A colour such as `255,0,0` |
+| 10 | blockCount | Number of blocks (exons) |
+| 11 | blockSizes | Comma-separated block lengths |
+| 12 | blockStarts | Comma-separated block starts, **relative to chromStart** |
+
+People say **BED3**, **BED6** or **BED12** for how many columns are filled.
+**BED12** can describe a whole spliced transcript on one line (each exon
+is a block), which makes it the usual way to give gene models to tools like
+RSeQC or to load them into a browser.
+
+```
+chr1  11425  14409  my_transcript  0  +  14409  14409  0  3  246,135,1300,  0,1185,1684,
+                                                              └ 3 exons, sizes, offsets from 11425
+```
+
+::: {.callout-note}
+For ChIP and ATAC data you'll meet BED variants with extra columns
+(narrowPeak, broadPeak, BEDPE). These are covered in those modules.
+:::
+
+### bedtools: the Swiss army knife for intervals
+
+```bash
+module load bedtools
+sort -k1,1 -k2,2n genes.bed > genes.sorted.bed          # most tools want sorted input
+bedtools intersect -a genes.bed -b regions.bed -u       # genes overlapping any region
+bedtools merge -i genes.sorted.bed                      # join overlapping intervals
+bedtools getfasta -fi genome.fa -bed genes.bed -s       # sequences of each interval (strand-aware)
+bedtools slop -i genes.bed -g genome.chrom.sizes -b 1000   # add 1 kb on each side
+bedtools coverage -a genes.bed -b sample_sorted.bam     # how many reads per interval
+```
+
+Many bedtools commands need a **chrom sizes** file: chromosome names and
+lengths, two columns. Make it from the `.fai`: `cut -f1,2 genome.fa.fai > genome.chrom.sizes`.
+
+## bedGraph: a number for each interval
+
+A **bedGraph** is BED3 plus one value: usually how many reads cover that
+stretch. Neighbouring bases with the same value share one line.
+
+```
+track type=bedGraph
+chr7   5527100   5527150   12
+chr7   5527150   5527200   37
+chr7   5527200   5527250   41
+```
+
+It is plain text and easy to read, but whole-genome bedGraphs are large and slow
+to display.
+
+## bigWig: bedGraph made fast
+
+A **bigWig** holds the same information as a bedGraph, but **binary,
+compressed and indexed**, with pre-computed summaries at several zoom levels.
+A genome browser can show any region (or the whole chromosome) without reading
+the whole file. bagPipes' `signal` rules write bigWigs with
+`bamCoverage` ([Signal tracks](signal-tracks.qmd)).
+
+Because it is binary, you need tools to look inside:
+
+```bash
+module load ucsctools   # name may differ: try `module avail ucsc`
+bigWigInfo sample.bw                          # chromosomes, coverage, mean, min, max
+bigWigToBedGraph sample.bw stdout -chrom=chr7 -start=5527000 -end=5531000
+bigWigAverageOverBed sample.bw genes.bed out.tab   # average signal per gene
+bedGraphToBigWig in.bedGraph genome.chrom.sizes out.bw   # the other direction
+```
+
+In Python, `pyBigWig` reads bigWigs; in R, `rtracklayer::import("x.bw")`.
+deepTools (`computeMatrix`, `plotProfile`, `plotHeatmap`, `multiBigwigSummary`)
+makes metagene plots and comparisons from them.
+
+| Format | Text or binary | Indexed | Typical use |
+|---|---|---|---|
+| WIG | text | no | Old; you may meet it in public data |
+| bedGraph | text | no | Intermediate files, small regions |
+| **bigWig** | binary | yes | Coverage tracks in IGV/UCSC, metagene plots |
+| bigBed | binary | yes | A BED file made fast, for browser hubs |
+
+::: {.callout-tip}
+## Check your understanding
+
+1. A gene in the GTF has start `1001` and end `2000`. What are its BED start
+   and end, and how long is it?
+2. Which column of a GTF tells you whether a line is an exon or a whole gene?
+3. Why can't you open a bigWig with `less`, and what can you use instead?
+4. A BED12 line has `blockCount` 4. What does that probably represent?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. BED start 1000, end 2000; the length is 1,000 bp in both systems.
+2. Column 3 (feature).
+3. It is binary and compressed. Use `bigWigInfo`, `bigWigToBedGraph`, IGV, or
+   `rtracklayer`/`pyBigWig`.
+4. A transcript with four exons.
+:::
+:::

@@ -1,0 +1,175 @@
+# Into R: a first look with DESeq2 {#sec-into-r}
+
+`RNApipe` stops at `{runName}_tximport.rds`. This chapter shows how to pick
+it up in R and take the first steps of a differential expression analysis
+with **DESeq2**. It's an introduction, not a full statistics course. The
+[DESeq2 vignette](https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html)
+is the reference.
+
+::: {.callout-note}
+With the 100 k-read test data, the results won't be biologically
+meaningful; there are far too few reads. Use it to learn the steps, then run
+the same code on a real dataset.
+:::
+
+## Setup
+
+Run R either on Longleaf (OnDemand RStudio, or `module load r/4.4.0` then `R`)
+or on your laptop after copying the RDS, the copied samplesheet and the GTF.
+
+```r
+## install once
+install.packages("BiocManager")
+BiocManager::install(c("DESeq2", "tximport", "tximeta", "rtracklayer", "apeglm"))
+```
+
+There are two ways in. **Option A** uses the `_tximport.rds` that RNApipe
+writes. **Option B** skips it and reads the Salmon folders with **tximeta**
+([why](tximport.qmd#tximeta)). Both end in the same `dds` object; everything
+from step 4 on is identical.
+
+## Option A: start from the tximport RDS
+
+### 1. Load the object and sample information
+
+```r
+library(DESeq2)
+
+txi <- readRDS("output/quant/IMGL_iMGL_WT_1_tximport.rds")
+ss  <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt",
+                  stringsAsFactors = FALSE,
+                  na.strings = "")      # keep the word "NA" (no treatment) as text
+
+## the current txImporter.R leaves sample names as NA; fix them (order = samplesheet order)
+for (m in c("counts", "abundance", "length")) colnames(txi[[m]]) <- ss$sn
+
+dim(txi$counts)          # genes x samples
+head(txi$counts)
+```
+
+### 2. Describe the samples
+
+DESeq2 needs a table with one row per sample (in the **same order** as the
+columns of the matrices) and the variables you want to compare.
+
+```r
+coldata <- data.frame(
+  row.names = ss$sn,
+  condition = factor(paste(ss$Treatment, ss$Time, sep = "_")),
+  rep       = factor(ss$Bio_Rep)
+)
+coldata$condition <- relevel(coldata$condition, ref = "NA_00h")   # the control
+coldata
+stopifnot(identical(rownames(coldata), colnames(txi$counts)))
+```
+
+### 3. Build the DESeq2 object
+
+```r
+dds <- DESeqDataSetFromTximport(txi, colData = coldata, design = ~ condition)
+
+## drop genes with almost no reads (speeds things up, doesn't change results much)
+keep <- rowSums(counts(dds) >= 10) >= 2
+dds  <- dds[keep, ]
+```
+
+`DESeqDataSetFromTximport` takes the counts (rounded to whole numbers) and
+uses `txi$length` as a per-gene, per-sample offset ([tximport](tximport.qmd)).
+
+## Option B: start from tximeta {#option-b-start-from-tximeta}
+
+```r
+library(tximeta)
+library(DESeq2)
+
+ss <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt",
+                 stringsAsFactors = FALSE, na.strings = "")
+coldata <- data.frame(
+  files     = file.path("output/quant", ss$sn, "quant.sf"),
+  names     = ss$sn,
+  condition = factor(paste(ss$Treatment, ss$Time, sep = "_")),
+  rep       = factor(ss$Bio_Rep)
+)
+coldata$condition <- relevel(coldata$condition, ref = "NA_00h")
+
+se  <- tximeta(coldata)          # see the tximeta section if it says the index is unknown
+gse <- summarizeToGene(se)
+dds <- DESeqDataSet(gse, design = ~ condition)
+dds <- dds[rowSums(counts(dds) >= 10) >= 2, ]
+```
+
+A bonus of this route: `rowRanges(dds)` holds each gene's coordinates and,
+for GENCODE, its symbol (`mcols(gse)$gene_name` when available), so step 6
+below needs no GTF.
+
+## 4. Look before you test: PCA
+
+```r
+vsd <- vst(dds, blind = TRUE)        # variance-stabilised values for plotting
+plotPCA(vsd, intgroup = "condition")
+```
+
+Replicates of a condition should sit near each other. If a sample sits with
+the wrong group, check the samplesheet before anything else.
+
+## 5. Test
+
+```r
+dds <- DESeq(dds)
+resultsNames(dds)                     # e.g. "condition_Ab_24h_vs_NA_00h"
+res <- results(dds, name = "condition_Ab_24h_vs_NA_00h", alpha = 0.05)
+summary(res)
+
+## shrink fold changes for ranking and plotting
+resLFC <- lfcShrink(dds, coef = "condition_Ab_24h_vs_NA_00h", type = "apeglm")
+plotMA(resLFC, ylim = c(-5, 5))
+```
+
+| Column of `res` | Meaning |
+|---|---|
+| `baseMean` | Average normalised count across all samples |
+| `log2FoldChange` | log2(treated / control): 1 = doubled, −1 = halved |
+| `lfcSE` | Its standard error |
+| `pvalue` | Raw p-value |
+| `padj` | **Adjusted p-value** (Benjamini–Hochberg). Use this one; `NA` means the gene was filtered out (too low or an outlier) |
+
+## 6. Add gene names and save
+
+```r
+gtf   <- rtracklayer::import("gencode.v49.primary_assembly.annotation.gtf")
+genes <- unique(as.data.frame(gtf[gtf$type == "gene"])[, c("gene_id", "gene_name", "gene_type")])
+
+out <- as.data.frame(resLFC)
+out$gene_id <- rownames(out)
+out <- merge(genes, out, by = "gene_id")
+out <- out[order(out$padj), ]
+write.csv(out, "DE_Ab24h_vs_ctrl.csv", row.names = FALSE)
+head(out[, c("gene_name", "log2FoldChange", "padj")], 20)
+```
+
+## Where to go next
+
+- **Normalised counts** for plotting one gene: `plotCounts(dds, gene = "ENSG...", intgroup = "condition")`.
+- **Batch or paired designs**: `design = ~ rep + condition` when replicates
+  were processed in batches.
+- **Gene-set enrichment** (fgsea, clusterProfiler) on the ranked list.
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Why must the rows of `coldata` be in the same order as the columns of
+   `txi$counts`?
+2. A gene has `log2FoldChange = 2` and `padj = 0.3`. How do you describe it?
+3. Why do we look at the PCA before running `results()`?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. DESeq2 matches them by position. If they're out of order, each sample's
+   counts get the wrong condition label, and every result is wrong.
+2. It looks 4× higher in the treated samples, but the evidence isn't strong
+   enough to call it differentially expressed at the usual cut-off (padj < 0.05).
+3. To catch mislabelled samples, outliers or batch effects that would distort
+   the test.
+:::
+:::

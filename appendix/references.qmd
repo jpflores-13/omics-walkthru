@@ -1,0 +1,44 @@
+# Further reading and references {#sec-references}
+
+## Getting comfortable with the command line
+
+- Vince Buffalo, *Bioinformatics Data Skills* (O'Reilly, 2015). Chapters on
+  Unix, plain-text data, and "Working with range data" (coordinates, BED,
+  GTF) and alignment data (SAM/BAM) match the level of this book.
+- [The Carpentries: The Unix Shell](https://swcarpentry.github.io/shell-novice/),
+  a free hands-on lesson.
+- [UNC Research Computing: Longleaf documentation](https://help.rc.unc.edu/longleaf-cluster/).
+
+## File formats
+
+- [SAM/BAM specification](https://samtools.github.io/hts-specs/SAMv1.pdf) (hts-specs).
+- [UCSC file format FAQ](https://genome.ucsc.edu/FAQ/FAQformat.html) (BED, bedGraph, bigWig, ...).
+- [GENCODE data format](https://www.gencodegenes.org/pages/data_format.html) (GTF columns and attributes).
+- [Explain SAM flags](https://broadinstitute.github.io/picard/explain-flags.html).
+
+## The tools used by bagPipes RNApipe
+
+- **FastQC**: [bioinformatics.babraham.ac.uk/projects/fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)
+- **Trim Galore**: [github.com/FelixKrueger/TrimGalore](https://github.com/FelixKrueger/TrimGalore); Cutadapt: Martin, *EMBnet.journal* 2011.
+- **Salmon**: Patro *et al.*, *Nature Methods* 2017 ([doi:10.1038/nmeth.4197](https://doi.org/10.1038/nmeth.4197)); docs at [salmon.readthedocs.io](https://salmon.readthedocs.io/). Library types: [salmon.readthedocs.io/en/latest/library_type.html](https://salmon.readthedocs.io/en/latest/library_type.html).
+- **HISAT2**: Kim *et al.*, *Nature Biotechnology* 2019 ([doi:10.1038/s41587-019-0201-4](https://doi.org/10.1038/s41587-019-0201-4)).
+- **samtools**: Danecek *et al.*, *GigaScience* 2021 ([doi:10.1093/gigascience/giab008](https://doi.org/10.1093/gigascience/giab008)).
+- **deepTools**: Ramírez *et al.*, *Nucleic Acids Research* 2016 ([doi:10.1093/nar/gkw257](https://doi.org/10.1093/nar/gkw257)).
+- **MultiQC**: Ewels *et al.*, *Bioinformatics* 2016 ([doi:10.1093/bioinformatics/btw354](https://doi.org/10.1093/bioinformatics/btw354)).
+- **tximport**: Soneson, Love & Robinson, *F1000Research* 2015 ([doi:10.12688/f1000research.7563.2](https://doi.org/10.12688/f1000research.7563.2)).
+- **tximeta**: Love *et al.*, *PLoS Computational Biology* 2020 ([doi:10.1371/journal.pcbi.1007664](https://doi.org/10.1371/journal.pcbi.1007664)).
+- **DESeq2**: Love, Huber & Anders, *Genome Biology* 2014 ([doi:10.1186/s13059-014-0550-8](https://doi.org/10.1186/s13059-014-0550-8)).
+- **Snakemake**: Mölder *et al.*, *F1000Research* 2021 ([doi:10.12688/f1000research.29032.2](https://doi.org/10.12688/f1000research.29032.2)).
+
+## Tools mentioned for comparison
+
+- STAR: Dobin *et al.*, *Bioinformatics* 2013. kallisto: Bray *et al.*, *Nature
+  Biotechnology* 2016. featureCounts: Liao *et al.*, *Bioinformatics* 2014.
+- [nf-core/rnaseq](https://nf-co.re/rnaseq), a widely used community pipeline
+  (STAR + Salmon by default), useful for comparison.
+
+## RNA-seq analysis, more broadly
+
+- Conesa *et al.*, "A survey of best practices for RNA-seq data analysis,"
+  *Genome Biology* 2016 ([doi:10.1186/s13059-016-0881-8](https://doi.org/10.1186/s13059-016-0881-8)).
+- Love *et al.*, [RNA-seq workflow: gene-level exploratory analysis and differential expression](https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html) (Bioconductor).

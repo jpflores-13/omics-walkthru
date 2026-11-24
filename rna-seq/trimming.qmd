@@ -1,0 +1,105 @@
+# Trimming adapters and low-quality bases {#sec-trimming}
+
+**Rule:** `trim` · **Tool:** Trim Galore 0.6.10 (a wrapper around Cutadapt) ·
+**Input:** raw R1 and R2 FASTQ · **Output:** `{sample}_R1_trimmed.fastq.gz`,
+`{sample}_R2_trimmed.fastq.gz`, and a trimming report per read
+
+## The problem it solves
+
+Two kinds of bases in a read are not useful:
+
+1. **Adapter.** When the insert is shorter than the read length, the read
+   continues into the adapter ([After submission](after-submission.qmd#sequencing-reading-the-fragment-from-both-ends)).
+   Those bases are not in the genome and make reads fail to align or align badly.
+2. **Low-quality bases**, usually at the 3' end of the read, where the
+   sequencer is least confident.
+
+Trimming cuts these off the end of each read, and throws away reads that
+become too short to place reliably.
+
+```
+before:  GATTTGGGGTTCAAAGCAGTATCGATCAAATAG AGATCGGAAGAGC ACACGTCTGAACTCCAGTCAC
+                  your insert                 └──── Illumina adapter ────┘
+after:   GATTTGGGGTTCAAAGCAGTATCGATCAAATAG
+```
+
+## What bagPipes runs
+
+```bash
+module load trim_galore/0.6.10
+trim_galore -o output/trim --paired  sample_R1_001.fastq.gz  sample_R2_001.fastq.gz
+# renames *_val_1.fq.gz -> {sampleName}_R1_trimmed.fastq.gz (and _val_2 -> _R2)
+```
+
+Only one option is set: `--paired`. Everything else uses Trim Galore's
+defaults:
+
+| Default | What it does |
+|---|---|
+| Adapter **auto-detection** | Looks at the first 1 million reads for the Illumina, Nextera and small-RNA adapter starts, and uses whichever is most common (usually Illumina, `AGATCGGAAGAGC`) |
+| `-q 20` | Trims bases with quality below 20 from the 3' end |
+| `--stringency 1` | Even a single base matching the adapter at the very end is trimmed |
+| `-e 0.1` | Allows 10 % mismatches when matching the adapter |
+| `--length 20` | Discards reads shorter than 20 bp after trimming |
+| `--paired` | Keeps R1 and R2 in step: **if either read of a pair is too short, both are removed** |
+
+::: {.callout-note}
+## Why "paired" matters
+
+Aligners expect read 1,000 in the R1 file to be the mate of read 1,000 in the
+R2 file. If you trimmed R1 and R2 separately and one lost a read, every
+pair after it would be mismatched. `--paired` prevents this.
+:::
+
+## Reading the trimming report
+
+Trim Galore writes a text report per read file. Before Snakemake deletes it (it is
+`temp()`; see [the map](pipeline-map.qmd#the-output-folder)), MultiQC pulls
+out the key numbers:
+
+- **Reads with adapters**: % of reads where adapter was found. Depends on
+  insert size; 10–40 % is common for `2x100`/`2x150`.
+- **Bases quality-trimmed** and **total written (filtered)**: usually > 90 %
+  of bases are kept.
+- **Pairs removed because they were too short**: normally well under 5 %. A
+  large fraction points to adapter dimers or very degraded RNA.
+
+## Try it
+
+Inside an interactive job:
+
+```bash
+module load trim_galore/0.6.10
+cd ~/rnaseq_practice
+D=/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled
+trim_galore -o trim --paired \
+  $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz \
+  $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R2_001.fastq.gz
+ls trim
+cat trim/*R1_001.fastq.gz_trimming_report.txt | less
+```
+
+Then count the pairs before and after:
+
+```bash
+echo $(( $(zcat $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz | wc -l) / 4 ))
+echo $(( $(zcat trim/*_val_1.fq.gz | wc -l) / 4 ))
+```
+
+::: {.callout-tip}
+## Check your understanding
+
+1. After trimming, R1 has 99,500 reads. How many reads does R2 have?
+2. A read ends `...GCAGTAAGATCGG`. What will Trim Galore do?
+3. Why is it important that HISAT2 and Salmon both use the **trimmed** reads?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. Also 99,500. With `--paired`, pairs are kept or dropped together.
+2. Recognise `AGATCGG` as the start of the Illumina adapter and cut it (and
+   anything after it) off, leaving `...GCAGTA`.
+3. Adapter bases don't exist in the genome or transcriptome. Left in, they
+   lower alignment and mapping rates and can cause reads to be misplaced.
+:::
+:::

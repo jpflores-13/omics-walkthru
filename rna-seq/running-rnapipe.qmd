@@ -1,0 +1,167 @@
+# Running RNApipe on Longleaf {#sec-running}
+
+This chapter is the hands-on walkthrough: from an empty folder to a finished
+run on the bagPipes test data. Follow it once with the test data before
+using your own.
+
+## 1. Get the code
+
+Run pipelines in `/work`, where there's space:
+
+```bash
+cd /work/users/j/d/jdoe            # your own /work folder
+git clone https://github.com/PhanstielLab/bagPipes.git
+cd bagPipes
+ls
+```
+
+Every bagPipes command must be run **from inside this folder**, because the
+paths in the Snakefiles are relative (`output/...`, `config/...`).
+
+## 2. Write the samplesheet
+
+`RNAsamplesheet.txt` is a **tab-separated** table, one row per pair of FASTQ
+files:
+
+| Column | Example | Required? | Notes |
+|---|---|---|---|
+| `Project` | `IMGL` | used in names | |
+| `Cell_Type` | `iMGL` | used in names | |
+| `Genotype` | `WT` | used in names | |
+| `Treatment` | `Ab`, `NA` | used in names | Use a word such as `NA` or `none` for "no treatment"; don't leave it empty |
+| `Time` | `24h`, `00h` | used in names | Zero-pad (`00h`, `06h`) so names sort nicely |
+| `Bio_Rep`, `Tech_Rep`, `Seq_Rep` | `1` | used in names | |
+| `Read1`, `Read2` | `sample_R1_001.fastq.gz` | **yes** | File names only |
+| `Sequencing_Directory` | `/proj/.../subsampled/` | **yes** | The folder holding the FASTQs |
+
+The metadata columns can be anything you like, as long as `fileNamesFrom` and
+`mergeBy` in the config name columns that exist. The shipped
+`RNAsamplesheet.txt` already points at the 100 k test data, so for the
+practice run you can leave it as is.
+
+```bash
+column -t -s $'\t' RNAsamplesheet.txt | less -S     # view it lined up
+cat -A RNAsamplesheet.txt | head -2                  # check for tabs (^I) and no ^M
+```
+
+::: {.callout-warning}
+Values become file names. Use only letters, numbers, `-` and `.`: no spaces,
+no `/`, and **no `_` inside a value**, since `_` is the separator.
+:::
+
+## 3. Edit the config {#choose-the-reference}
+
+Open `config/RNAconfig.yaml` in an editor (`nano config/RNAconfig.yaml`).
+
+**Choose the reference.** In the current bagPipes `main`, the three
+reference lines are all **commented out** (`##`). Uncomment **one block**: all
+three lines from the same build. For human hg38 with GENCODE v49:
+
+```yaml
+salmon: '/proj/phanstiel_lab/Reference/human/hg38/indices/salmon/'
+hisat2: '/proj/phanstiel_lab/Reference/human/hg38/indices/hisat2/hg38_gencode'
+gtf: '/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf'
+```
+
+(Delete the leading `## `; YAML is strict about indentation, so the key must
+start at the beginning of the line.) Check the paths exist:
+
+```bash
+ls /proj/phanstiel_lab/Reference/human/hg38/indices/salmon/
+ls /proj/phanstiel_lab/Reference/human/hg38/indices/hisat2/hg38_gencode*
+```
+
+**Set the other keys** to fit your experiment:
+
+| Key | What it does |
+|---|---|
+| `samplesheet` | Path to the samplesheet |
+| `fileNamesFrom` | Columns joined to make each sample's name |
+| `mergeBy` | Columns that define replicate groups for merged tracks; `''` to turn off ([Merging](merging.qmd)) |
+| `stranded` | `True` to make `_fwd`/`_rev` tracks (only meaningful for stranded libraries) |
+| `*Vers` | Module versions. Only change them if Longleaf removes one |
+
+## 4. Launch
+
+```bash
+sbatch RNApipe.sh
+```
+
+`RNApipe.sh` then: loads Python, creates a virtual environment `env/` with
+Snakemake 8.27.1 and the SLURM plugin, runs the `RNApipeCore` workflow,
+and then the `mergeSignal` workflow.
+
+::: {.callout-tip}
+## Preview what would run (a "dry run")
+
+From an interactive job, with the environment set up:
+
+```bash
+module load python/3.12.4
+python3 -m venv env && source env/bin/activate && pip install -r config/requirements.txt pandas snakemake-executor-plugin-slurm
+mkdir -p output
+snakemake -s workflows/RNApipeCore.snakefile --configfile config/RNAconfig.yaml -n
+```
+
+`-n` lists every job without running anything. It's the quickest way to catch
+a typo in the samplesheet or a missing file.
+:::
+
+## 5. Watch it
+
+```bash
+squeue -u $USER                       # manager + worker jobs
+tail -f RNApipeCore-*.out             # Snakemake's progress (Ctrl-C to stop watching)
+ls output/                            # folders appear as steps finish
+```
+
+Snakemake prints lines like `5 of 33 steps (15%) done`. At the end you'll see
+`RNApipe completed successfully! Wahoo!`, twice (once per workflow), then
+`Workflow completed successfully!`.
+
+## 6. If it fails
+
+1. **Find the failing rule.** Search the manager log for `Error in rule`:
+   ```bash
+   grep -A 15 "Error in rule" RNApipeCore-*.out
+   ```
+   It names the rule, the sample, the log files and the command that ran.
+2. **Read that rule's log** in `output/logs/{rule}_{sample}.err`, and the job's
+   SLURM log.
+3. **Fix the cause** (see [Troubleshooting](../appendix/troubleshooting.qmd)).
+4. **Unlock if needed.** If the manager job was cancelled or killed, Snakemake
+   leaves a lock and the next run refuses to start
+   ("Directory cannot be locked"). Then:
+   ```bash
+   ./unlock.sh rna
+   ```
+5. **Rerun** with `sbatch RNApipe.sh`. Finished steps are skipped.
+
+## 7. What to keep
+
+When the run is done, copy to `/proj` (or wherever your lab keeps results):
+
+- `output/QC/{runName}_multiqc_report.html` and `_multiqc_data/`
+- `output/quant/` (all `quant.sf` + the `_tximport.rds`)
+- `output/signal/`, `output/mergeSignal/` (bigWigs)
+- `output/align/` and `output/mergeAlign/` if you'll want to look at reads again
+- **`config/RNAconfig.yaml`, your samplesheet, and the bagPipes commit**
+  (`git rev-parse HEAD`): together they record exactly how the data were made
+
+```bash
+git rev-parse HEAD > output/bagPipes_commit.txt
+cp config/RNAconfig.yaml RNAsamplesheet.txt output/
+rsync -av output/ /proj/phanstiel_lab/<your/project/folder>/
+```
+
+::: {.callout-tip}
+## Exercise
+
+Run the test data end to end. Then answer from the outputs alone:
+
+1. What is the run name, and where does it appear?
+2. What library type did Salmon detect for each sample?
+3. Which sample has the lowest alignment rate?
+4. In IGV, is *GAPDH* signal in the `_fwd` or `_rev` track?
+5. How long did the slowest `quant` job take? (Hint: `output/benchmarks/`.)
+:::

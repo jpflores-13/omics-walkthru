@@ -1,0 +1,141 @@
+# Counting transcripts with Salmon {#sec-salmon}
+
+**Rule:** `quant` · **Tool:** Salmon 1.10.3 · **Input:** trimmed R1 and R2 ·
+**Output:** `quant/{sample}/quant.sf` plus a folder of logs and metadata
+
+## The problem it solves
+
+For differential expression, what you need is **how many reads came from each gene** in
+each sample. Salmon answers this directly, without working out the exact
+base-by-base alignment of every read to the genome.
+
+## How Salmon works, without the math
+
+1. **Index the transcriptome.** Salmon builds an index of every transcript
+   sequence (every isoform of every gene) from a transcriptome FASTA. The lab
+   keeps a prebuilt one; the path is the `salmon:` line of the config.
+2. **Map each read pair to compatible transcripts.** Using short exact
+   matches (*k*-mers) plus a fast check of the alignment score (*selective
+   alignment*), Salmon finds the set of transcripts each pair could have come from.
+   It does not record *where* in the genome the read sits.
+3. **Share out ambiguous reads.** Many reads fit several isoforms of the same gene.
+   Salmon uses a statistical model (expectation-maximisation) to estimate how
+   much of each transcript there is, so that all reads are explained as well as
+   possible. A read compatible with isoforms A and B might be counted as 0.7
+   to A and 0.3 to B.
+4. **Correct for biases**, such as transcript length and fragment-length
+   distribution, and report the abundances.
+
+```{mermaid}
+flowchart LR
+  P["read pair"] --> K["find transcripts<br/>it is compatible with"]
+  K --> A["isoform A"] & B["isoform B"] & C["isoform C (no match)"]
+  A & B --> EM["EM: share the read<br/>by estimated abundance"]
+  EM --> Q["quant.sf<br/>TPM + NumReads per transcript"]
+```
+
+Because it skips full alignment, Salmon is fast (minutes per sample) and
+deals with isoforms properly, which simple "count reads overlapping a gene"
+methods don't.
+
+## What bagPipes runs
+
+```bash
+module load salmon/1.10.3
+salmon quant --writeUnmappedNames --threads 1 \
+  -i {config.salmon} \
+  -l A \
+  -1 {sample}_R1_trimmed.fastq.gz -2 {sample}_R2_trimmed.fastq.gz \
+  -o output/quant/{sample}
+```
+
+| Option | Meaning |
+|---|---|
+| `-i` | The Salmon index (built from a transcriptome, matching the `gtf`) |
+| `-l A` | **Automatically detect the library type** (stranded or not, which read is sense) |
+| `-1`, `-2` | The trimmed paired reads |
+| `--writeUnmappedNames` | Write the names of reads that didn't map to `aux_info/unmapped_names.txt` |
+| `--threads 1` | One CPU; the job gets 20 GB of memory (`resources` in the rule) |
+
+## Reading quant.sf {#reading-quant.sf}
+
+```
+Name                Length  EffectiveLength  TPM       NumReads
+ENST00000456328.2   1657    1465.21          0.53      2.0
+ENST00000488147.1   1351    1159.21          41.20     121.6
+```
+
+| Column | Meaning |
+|---|---|
+| `Name` | Transcript ID (not gene) |
+| `Length` | Transcript length in bases |
+| `EffectiveLength` | Length adjusted for the fragment-size distribution: the number of places a fragment could start |
+| `TPM` | **Transcripts per million**: relative abundance, normalised for length and depth. The TPMs in a sample add up to 1,000,000 |
+| `NumReads` | Estimated number of reads from this transcript (can be fractional) |
+
+::: {.callout-important}
+## TPM vs counts
+
+- **TPM** is good for comparing **genes within a sample** ("is gene X higher
+  than gene Y here?").
+- **Counts** (`NumReads`) are what **DESeq2 needs** to compare **samples**.
+  DESeq2 does its own normalisation, and it models counts, not TPMs.
+  `tximport` passes the counts, plus length information, to DESeq2
+  ([tximport](tximport.qmd)).
+
+Never feed TPMs into DESeq2.
+:::
+
+## Other files in the sample folder worth knowing
+
+```
+output/quant/{sample}/
+├── quant.sf
+├── lib_format_counts.json   # what library type Salmon detected
+├── logs/salmon_quant.log    # includes the "Mapping rate"
+└── aux_info/
+    ├── meta_info.json       # numbers of reads processed / mapped
+    └── unmapped_names.txt
+```
+
+Two numbers to check (both also appear in MultiQC):
+
+- **Mapping rate.** For a good human or mouse poly-A library, typically
+  70–90 %. Much lower can mean rRNA contamination, genomic DNA, the wrong
+  species index, or many intronic reads (total RNA libraries map lower).
+- **Detected library type** in `lib_format_counts.json` (`expected_format`).
+  For dUTP stranded paired-end libraries it should be **`ISR`**: **I**nward
+  facing pairs, **S**tranded, Read 1 from the **R**everse strand. `IU` means
+  unstranded; `ISF` means the reverse kit chemistry (Read 1 sense).
+
+## Try it
+
+```bash
+cd output/quant/IMGL_iMGL_WT_Ab_24h_1_1
+head quant.sf
+grep "Mapping rate" logs/salmon_quant.log
+grep expected_format lib_format_counts.json
+# the 10 most abundant transcripts by TPM
+sort -k4,4gr quant.sf | head -11
+```
+
+::: {.callout-tip}
+## Check your understanding
+
+1. Transcript A has 100 reads and is 1 kb long. Transcript B has 100 reads and
+   is 5 kb long. Which has the higher TPM?
+2. `lib_format_counts.json` says `IU`. You used a stranded kit. What might
+   have happened?
+3. Why are some `NumReads` values not whole numbers?
+
+::: {.callout-note collapse="true" appearance="simple"}
+## Answers
+
+1. A. Same reads over a shorter length means more molecules per kilobase.
+2. The library may not actually be stranded (wrong kit, a protocol step
+   skipped), or the samples were mixed up. Check the strand-specific tracks in
+   IGV.
+3. Reads that fit several transcripts are split between them in proportion to
+   their estimated abundance.
+:::
+:::

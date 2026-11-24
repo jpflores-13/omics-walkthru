@@ -1,0 +1,83 @@
+# The RNApipe map {#sec-pipeline-map}
+
+Before going through the steps one at a time, here is the whole of bagPipes'
+`RNApipe` at once. It is really **two workflows** run one after the other by
+`RNApipe.sh`:
+
+1. **`RNApipeCore`** (`workflows/RNApipeCore.snakefile`) processes every
+   sample on its own.
+2. **`mergeSignal`** (`workflows/mergeSignal.snakefile`) pools replicates
+   into merged BAMs and tracks.
+
+```{mermaid}
+flowchart TD
+  R["Raw FASTQ<br/>R1 + R2 per sample"] --> FQ["fastqc<br/>(FastQC)"]
+  R --> TR["trim<br/>(Trim Galore)"]
+  TR --> QU["quant<br/>(Salmon)"]
+  TR --> AL["align<br/>(HISAT2 + samtools)"]
+  AL --> SI["signal<br/>(bamCoverage, unstranded)"]
+  AL --> SS["strandedSignal<br/>(bamCoverage fwd / rev)"]
+  QU --> TX["tximport<br/>(R)"]
+  FQ & TR & QU & AL & SI & SS --> MQ["multiqc"]
+  AL -.-> MA["mergeAlign<br/>(samtools merge)"]
+  MA -.-> MS["mergeSignal /<br/>mergeStrandedSignal"]
+
+  classDef core fill:#e8f1fa,stroke:#2c7bb6;
+  classDef merge fill:#fdf3e7,stroke:#d98b2b,stroke-dasharray: 4 3;
+  class FQ,TR,QU,AL,SI,SS,TX,MQ core;
+  class MA,MS merge;
+```
+
+Blue boxes are `RNApipeCore`; dashed orange boxes are `mergeSignal`.
+
+The two branches after trimming answer **different questions**:
+
+| Branch | Question | Final product | Used for |
+|---|---|---|---|
+| **Salmon → tximport** | *How much* of each gene is there? | Gene-level count matrix (`_tximport.rds`) | Differential expression (DESeq2) |
+| **HISAT2 → bamCoverage** | *Where* in the genome do the reads fall? | BAMs and bigWig tracks | Looking at data in IGV, figures, QC |
+
+## Every rule in one table
+
+| Rule | Tool (version) | Input | Output | Chapter |
+|---|---|---|---|---|
+| `fastqc` | FastQC 0.12.1 | raw FASTQ | `QC/{sample}_R1/R2_fastqc.{html,zip}` | [FastQC](fastqc.qmd) |
+| `trim` | Trim Galore 0.6.10 | raw FASTQ | `trim/{sample}_R1/R2_trimmed.fastq.gz` + reports | [Trimming](trimming.qmd) |
+| `quant` | Salmon 1.10.3 | trimmed FASTQ | `quant/{sample}/quant.sf` | [Salmon](salmon.qmd) |
+| `align` | HISAT2 2.2.1, samtools 1.22 | trimmed FASTQ | `align/{sample}_sorted.bam`, `.bai`, `_stats.txt` | [Alignment](alignment.qmd) |
+| `signal` | deepTools 3.5.4 | BAM | `signal/unstranded/{sample}.bw` | [Signal tracks](signal-tracks.qmd) |
+| `strandedSignal` | deepTools 3.5.4 | BAM | `signal/stranded/{sample}_fwd.bw`, `_rev.bw` | [Signal tracks](signal-tracks.qmd) |
+| `multiqc` | MultiQC 1.28 | everything above | `QC/{runName}_multiqc_report.html` | [MultiQC](multiqc.qmd) |
+| `tximport` | R 4.4.0 | all `quant.sf` + GTF | `quant/{runName}_tximport.rds` | [tximport](tximport.qmd) |
+| `mergeAlign` | samtools | replicate BAMs | `mergeAlign/{mergeName}_sorted.bam` | [Merging](merging.qmd) |
+| `mergeSignal`, `mergeStrandedSignal` | deepTools | merged BAM | `mergeSignal/...bw` | [Merging](merging.qmd) |
+
+Versions are from `config/RNAconfig.yaml`.
+
+## The output folder
+
+```
+output/
+├── {runName}_RNApipeSamplesheet.txt   # your samplesheet + the sample names used
+├── QC/                                # MultiQC report and its data folder
+├── trim/                              # (emptied at the end, see below)
+├── quant/{sample}/quant.sf            # Salmon, one folder per sample
+├── quant/{runName}_tximport.rds       # the gene-level object for R
+├── align/                             # sorted BAMs, indexes, flagstat
+├── signal/unstranded/  signal/stranded/
+├── mergeAlign/  mergeSignal/          # only if merging is on
+├── logs/                              # each tool's own messages
+├── logs_slurm/                        # SLURM's record of each job
+└── benchmarks/                        # time and memory used by each step
+```
+
+::: {.callout-note}
+## Where did my FastQC reports and trimmed FASTQs go?
+
+In `RNApipeCore.snakefile` the FastQC files, trimming reports and trimmed
+FASTQs are marked `temp()`. Snakemake **deletes them** once every rule that
+needs them has finished (the last one is `multiqc`). Their numbers are
+kept in `QC/{runName}_multiqc_data/` and in the MultiQC report. This saves a lot
+of disk space. If you want to keep them, remove the `temp( )` wrapper around
+those outputs.
+:::
