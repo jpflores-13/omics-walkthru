@@ -3,6 +3,24 @@
 **Rule:** `fastqc` · **Tool:** FastQC 0.12.1 · **Input:** raw R1 and R2 FASTQ ·
 **Output:** one HTML report and one zip per read file
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s1,s2,s3,s4,s5,s6,s7 other;
+  class s0 here;
+```
+:::
+
 ## The problem it solves
 
 Before spending hours aligning, you want to know whether the reads look as they should:
@@ -48,21 +66,27 @@ Interpret them; don't just count them.
 
 ## Try it
 
+Everything in a *Try it* box assumes the [practice setup](practice-setup.qmd):
+`source $WALK/env.sh` and `conda activate rnaseq-tools` in your terminal (on a
+cluster, inside an interactive job).
+
 ```bash
-srun -p interact -n 1 --mem=4g -t 1:00:00 --pty bash
-module load fastqc/0.12.1
-mkdir -p ~/rnaseq_practice/fastqc
-cd ~/rnaseq_practice
-D=/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled
-fastqc -o fastqc $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz \
-                 $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R2_001.fastq.gz
+mkdir -p $WALK/work/fastqc && cd $WALK/work
+fastqc -o fastqc $DATA/*_001.fastq.gz          # all 8 practice files
 ls fastqc
 ```
 
-Copy the `.html` file to your laptop to open it (run this **on your laptop**):
+Open a report in your web browser:
 
 ```bash
-scp your_onyen@longleaf.unc.edu:~/rnaseq_practice/fastqc/*.html .
+open fastqc/N61311_untrt_R1_001_fastqc.html       # macOS
+xdg-open fastqc/N61311_untrt_R1_001_fastqc.html   # Linux
+```
+
+On a cluster, copy the HTML to your laptop first (run this **on your laptop**):
+
+```bash
+scp <user>@<cluster address>:<path to>/work/fastqc/*.html .
 ```
 
 ::: {.callout-tip}

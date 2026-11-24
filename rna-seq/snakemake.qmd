@@ -31,8 +31,8 @@ rule signal:
 ```
 
 - **`{sampleName}`** is a **wildcard**: a blank that Snakemake fills in. To make
-  `output/signal/unstranded/IMGL_iMGL_WT_Ab_24h_1_1.bw`, it sets
-  `sampleName = IMGL_iMGL_WT_Ab_24h_1_1` and looks for the matching BAM.
+  `output/signal/unstranded/airway_ASM_N61311_untrt.bw`, it sets
+  `sampleName = airway_ASM_N61311_untrt` and looks for the matching BAM.
 - **`{input.bam}`, `{output}`, `{params.version}`** in the shell command are
   replaced by the real paths and values before it runs.
 - **`config[...]`** reads values from `config/RNAconfig.yaml`.
@@ -45,8 +45,8 @@ Snakemake starts from the files you want, which are listed in `rule all`, and wo
 ```python
 rule all:
     input:
-        "output/QC/IMGL_iMGL_WT_1_multiqc_report.html",
-        "output/quant/IMGL_iMGL_WT_1_tximport.rds"
+        "output/QC/airway_ASM_multiqc_report.html",
+        "output/quant/airway_ASM_tximport.rds"
 ```
 
 > To make the MultiQC report, I need every BAM, bigWig, quant.sf, ... → to make
@@ -77,12 +77,13 @@ samplesheet before any rule runs:
 1. **Read paths.** `Sequencing_Directory` + `Read1` (and `Read2`) gives each FASTQ's
    full path.
 2. **Sample names.** The values in the `fileNamesFrom` columns are joined with
-   `_`: `IMGL` + `iMGL` + `WT` + `Ab` + `24h` + `1` + `1` →
-   `IMGL_iMGL_WT_Ab_24h_1_1`.
-3. **Run name.** `utils/namer.py` keeps only the columns that have the
-   **same value in every row**, in order. In the example, `Project`,
-   `Cell_Type`, `Genotype` and `Tech_Rep` are constant, so the run name is
-   `IMGL_iMGL_WT_1`. It prefixes the MultiQC report, the tximport RDS and the
+   `_`. With the practice samplesheet and `fileNamesFrom: ['Project',
+   'Cell_Type', 'Donor', 'Treatment']`: `airway` + `ASM` + `N61311` + `untrt` →
+   `airway_ASM_N61311_untrt`.
+3. **Run name.** `utils/namer.py` keeps only the `fileNamesFrom` columns that
+   have the **same value in every row**, in order. In the practice data,
+   `Project` and `Cell_Type` are constant (`Donor` and `Treatment` vary), so the
+   run name is `airway_ASM`. It prefixes the MultiQC report, the tximport RDS and the
    copied samplesheet.
 4. **Copied samplesheet.** `output/{runName}_RNApipeSamplesheet.txt` is your
    samplesheet with the full paths and an `sn` (sample name) column added.

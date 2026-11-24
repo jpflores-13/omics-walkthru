@@ -5,6 +5,24 @@
 `mergeAlign/{mergeName}_sorted.bam`, `mergeSignal/unstranded/{mergeName}.bw`,
 `mergeSignal/stranded/{mergeName}_fwd.bw`, `_rev.bw`
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s1,s2,s3,s4,s6,s7 other;
+  class s5 here;
+```
+:::
+
 ## The problem it solves
 
 For **looking** at data, one track per condition is easier than one per
@@ -28,21 +46,24 @@ Two config keys:
 - `mergeBy`: columns joined to name each **group**. Columns left out of
   `mergeBy` are the ones that get pooled.
 
-With the shipped config:
+With the practice data's config ([Running the pipeline](running-rnapipe.qmd)):
 
 ```yaml
-fileNamesFrom: ['Project', 'Cell_Type', 'Genotype', 'Treatment', 'Time', 'Bio_Rep', 'Tech_Rep']
-mergeBy:       ['Project', 'Cell_Type', 'Genotype', 'Treatment', 'Time']
+fileNamesFrom: ['Project', 'Cell_Type', 'Donor', 'Treatment']
+mergeBy:       ['Project', 'Cell_Type', 'Treatment']
 ```
 
-`Bio_Rep` and `Tech_Rep` are left out, so replicates are pooled:
+`Donor` is left out of `mergeBy`, so the two donors are pooled per treatment:
 
 | Sample name (`fileNamesFrom`) | Merge name (`mergeBy`) |
 |---|---|
-| `IMGL_iMGL_WT_Ab_24h_1_1` | `IMGL_iMGL_WT_Ab_24h` |
-| `IMGL_iMGL_WT_Ab_24h_2_1` | `IMGL_iMGL_WT_Ab_24h` |
-| `IMGL_iMGL_WT_NA_00h_1_1` | `IMGL_iMGL_WT_NA_00h` |
-| `IMGL_iMGL_WT_NA_00h_2_1` | `IMGL_iMGL_WT_NA_00h` |
+| `airway_ASM_N61311_untrt` | `airway_ASM_untrt` |
+| `airway_ASM_N052611_untrt` | `airway_ASM_untrt` |
+| `airway_ASM_N61311_dex` | `airway_ASM_dex` |
+| `airway_ASM_N052611_dex` | `airway_ASM_dex` |
+
+(The config that ships with bagPipes does the same thing with replicate columns:
+it leaves `Bio_Rep` and `Tech_Rep` out of `mergeBy`.)
 
 To **turn merging off**, set `mergeBy: ''` or make it identical to
 `fileNamesFrom`. `mergeSignal` then has nothing to do.

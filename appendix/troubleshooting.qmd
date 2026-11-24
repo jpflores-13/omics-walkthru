@@ -11,7 +11,9 @@ failed, then read `output/logs/{rule}_{sample}.err` and the job's SLURM log.
 | `KeyError: 'salmon'` / `'hisat2'` / `'gtf'` | Reference lines still commented out in `RNAconfig.yaml` | Uncomment one block ([Running](../rna-seq/running-rnapipe.qmd#choose-the-reference)) |
 | `Directory cannot be locked` | A previous run was killed | `./unlock.sh rna`, then rerun |
 | `MissingInputException` | A FASTQ path is wrong | Check `Sequencing_Directory` ends in `/` or that `Read1`/`Read2` names are exact (`ls` them) |
-| `module: command not found` / module not found | Version in config no longer on Longleaf | `module avail <tool>` and update the `*Vers` key |
+| `module: command not found` / module not found | No module system (laptop), or that version isn't installed on your cluster | On a cluster: `module avail <tool>` and update the `*Vers` key. bagPipes needs a cluster with modules ([Running the pipeline](../rna-seq/running-rnapipe.qmd)) |
+| `command not found` for `salmon`, `fastqc`, ... in a Try-it box | conda environment not active | `conda activate rnaseq-tools` |
+| `$DATA` is empty / `No such file` for practice files | Shortcuts not loaded in this terminal | `source ~/omics-walkthru-practice/env.sh` |
 | `FileNotFoundError: output/...Samplesheet.txt` | `output/` doesn't exist (only in dry runs by hand) | `mkdir -p output` |
 
 ## A step fails

@@ -4,6 +4,24 @@
 **Input:** raw R1 and R2 FASTQ · **Output:** `{sample}_R1_trimmed.fastq.gz`,
 `{sample}_R2_trimmed.fastq.gz`, and a trimming report per read
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s2,s3,s4,s5,s6,s7 other;
+  class s1 here;
+```
+:::
+
 ## The problem it solves
 
 Two kinds of bases in a read are not useful:
@@ -66,24 +84,33 @@ out the key numbers:
 
 ## Try it
 
-Inside an interactive job:
+Everything in a *Try it* box assumes the [practice setup](practice-setup.qmd):
+`source $WALK/env.sh` and `conda activate rnaseq-tools` in your terminal (on a
+cluster, inside an interactive job).
+
+Trim one sample first and look at what happened:
 
 ```bash
-module load trim_galore/0.6.10
-cd ~/rnaseq_practice
-D=/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled
-trim_galore -o trim --paired \
-  $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz \
-  $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R2_001.fastq.gz
+cd $WALK/work
+S=N61311_untrt
+trim_galore -o trim --paired $DATA/${S}_R1_001.fastq.gz $DATA/${S}_R2_001.fastq.gz
 ls trim
-cat trim/*R1_001.fastq.gz_trimming_report.txt | less
+less trim/${S}_R1_001.fastq.gz_trimming_report.txt
 ```
 
-Then count the pairs before and after:
+Count the pairs before and after:
 
 ```bash
-echo $(( $(zcat $D/sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz | wc -l) / 4 ))
-echo $(( $(zcat trim/*_val_1.fq.gz | wc -l) / 4 ))
+echo $(( $(gzip -dc $DATA/${S}_R1_001.fastq.gz | wc -l) / 4 ))
+echo $(( $(gzip -dc trim/${S}_R1_001_val_1.fq.gz | wc -l) / 4 ))
+```
+
+Then trim the other three (the next chapters use all four):
+
+```bash
+for S in N61311_dex N052611_untrt N052611_dex; do
+  trim_galore -o trim --paired $DATA/${S}_R1_001.fastq.gz $DATA/${S}_R2_001.fastq.gz
+done
 ```
 
 ::: {.callout-tip}

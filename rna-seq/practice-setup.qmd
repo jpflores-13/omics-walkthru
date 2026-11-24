@@ -1,0 +1,128 @@
+# Your practice setup {#sec-practice-setup}
+
+Every hands-on box in this book uses the same small dataset and the same
+folder layout, so the commands work as written on any computer. This chapter
+sets it up once. It takes about 10 minutes plus the reference build.
+
+```{mermaid}
+flowchart LR
+  A["1. Software<br/>conda env"] --> B["2. Practice reads<br/>4 samples, 500k pairs each<br/>(from ENA)"]
+  B --> C["3. References<br/>GENCODE GTF + FASTA<br/>→ Salmon & HISAT2 indexes"]
+  C --> D["4. Shortcuts<br/>$DATA, $REF, $WALK"]
+  D --> E(["Ready for the<br/>hands-on boxes"])
+```
+
+## 1. Software
+
+Install conda and create the `rnaseq-tools` environment, as in
+[Where to run the analysis](computing.qmd#getting-the-software-conda). Then:
+
+```bash
+conda activate rnaseq-tools
+```
+
+## 2. The practice reads
+
+The practice data are a slice of the **airway** dataset (GEO
+[GSE52778](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE52778)):
+human airway smooth-muscle cells from two donors, untreated (`untrt`) or
+treated with dexamethasone (`dex`), paired-end 2 × 63 bp. The script streams
+only the first 500,000 read pairs of each run from ENA, about 25 MB per file:
+
+```bash
+export WALK=~/omics-walkthru-practice           # change if you want it elsewhere
+mkdir -p $WALK && cd $WALK
+git clone https://github.com/jpflores-13/omics-walkthru.git   # if you haven't already
+bash omics-walkthru/practice-data/get_practice_data.sh practice_data
+ls practice_data
+```
+
+```
+N052611_dex_R1_001.fastq.gz    N052611_untrt_R1_001.fastq.gz   N61311_dex_R1_001.fastq.gz    N61311_untrt_R1_001.fastq.gz   RNAsamplesheet.txt
+N052611_dex_R2_001.fastq.gz    N052611_untrt_R2_001.fastq.gz   N61311_dex_R2_001.fastq.gz    N61311_untrt_R2_001.fastq.gz
+```
+
+| Sample | Donor | Treatment | Source run |
+|---|---|---|---|
+| `N61311_untrt` | N61311 | untreated | SRR1039508 |
+| `N61311_dex` | N61311 | dexamethasone | SRR1039509 |
+| `N052611_untrt` | N052611 | untreated | SRR1039512 |
+| `N052611_dex` | N052611 | dexamethasone | SRR1039513 |
+
+(How to download public data properly, in full, is covered in the companion
+guide [download-public-data](https://jpflores-13.github.io/download-public-data).)
+
+## 3. The references
+
+Salmon and HISAT2 need an **index** built from a reference
+([formats](sequence-files.qmd)); `tximport` needs the matching **GTF**. All
+three must come from the same release, here GENCODE v49 (human, GRCh38).
+Choose a size:
+
+| Mode | What | Needs | Use when |
+|---|---|---|---|
+| `chr22` | Chromosome 22 only | ~4 GB RAM, minutes | Laptops; learning the steps. Only ~2–3 % of reads map (they come from all chromosomes), **which is expected** |
+| `full` | Whole genome, all transcripts | ~16 GB RAM, ~30 GB disk, 1–3 h | Real numbers; a workstation or cluster |
+
+```bash
+cd $WALK
+bash omics-walkthru/practice-data/get_references.sh references chr22 4   # or: full
+```
+
+It downloads the GENCODE files, builds both indexes, and prints the paths.
+
+::: {.callout-tip collapse="true"}
+## Phanstiel lab members: skip the build
+
+Prebuilt GENCODE v49 references are on Longleaf:
+
+```bash
+export SALMON_INDEX=/proj/phanstiel_lab/Reference/human/hg38/indices/salmon/
+export HISAT2_INDEX=/proj/phanstiel_lab/Reference/human/hg38/indices/hisat2/hg38_gencode
+export GTF=/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf
+```
+
+Put these in `$WALK/env.sh` instead of the lines in step 4.
+:::
+
+## 4. Shortcuts for every hands-on box
+
+The hands-on commands refer to the folders by **variables**, so they work
+wherever you put things. Save them in a file and load it in each new terminal:
+
+```bash
+cat > $WALK/env.sh <<EOF
+export WALK=$WALK
+export DATA=$WALK/practice_data
+export REF=$WALK/references
+export SALMON_INDEX=\$REF/salmon_index_chr22        # _full if you built the full one
+export HISAT2_INDEX=\$REF/hisat2_index_chr22/genome
+export GTF=\$REF/chr22.gtf                            # gencode.v49.primary_assembly.annotation.gtf for full
+EOF
+
+source $WALK/env.sh          # run this (and `conda activate rnaseq-tools`) in every new terminal
+echo $DATA; ls $DATA
+```
+
+`$DATA` means "the practice data folder", wherever that is on your computer.
+The [shell chapter](shell-basics.qmd#variables-wildcards-and-loops) explains
+variables.
+
+## The folder layout
+
+```
+~/omics-walkthru-practice/          ($WALK)
+├── omics-walkthru/                 the book's repository (scripts, conda files)
+├── env.sh                          your shortcuts
+├── practice_data/                  ($DATA)  8 FASTQ files + RNAsamplesheet.txt
+├── references/                     ($REF)   GENCODE files + Salmon/HISAT2 indexes
+└── work/                           where the hands-on outputs go (made as you go)
+```
+
+::: {.callout-note}
+## About the macOS `zcat`
+
+On some Macs `zcat file.gz` complains (it expects `.Z` files). Use
+`gzip -dc file.gz` or `zcat < file.gz`, which work everywhere. This book uses
+`zcat`; swap in `gzip -dc` if you hit that error.
+:::

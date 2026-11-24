@@ -5,6 +5,24 @@
 `signal/unstranded/{sample}.bw`, and if `stranded: True`,
 `signal/stranded/{sample}_fwd.bw` and `_rev.bw`
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s1,s2,s3,s5,s6,s7 other;
+  class s4 here;
+```
+:::
+
 ## The problem it solves
 
 A BAM file has every read, which is too much to look at across a whole
@@ -83,6 +101,28 @@ genes), so don't expect exactly 0 on the "wrong" track.
 3. Right-click a track → *Set Data Range* or select several and *Group
    Autoscale* to put them on the same scale.
 4. Add the GENCODE genes track (on by default in IGV's hg38) to see exons.
+
+## Try it
+
+Everything in a *Try it* box assumes the [practice setup](practice-setup.qmd):
+`source $WALK/env.sh` and `conda activate rnaseq-tools` in your terminal (on a
+cluster, inside an interactive job). You need the BAMs from
+[Alignment](alignment.qmd#try-it).
+
+```bash
+cd $WALK/work && mkdir -p signal
+for S in N61311_untrt N61311_dex N052611_untrt N052611_dex; do
+  bamCoverage -b align/${S}_sorted.bam -o signal/${S}.bw
+  bamCoverage --filterRNAstrand forward -b align/${S}_sorted.bam -o signal/${S}_fwd.bw
+  bamCoverage --filterRNAstrand reverse -b align/${S}_sorted.bam -o signal/${S}_rev.bw
+done
+bigWigInfo signal/N61311_untrt.bw
+```
+
+Load the four unstranded tracks into IGV with a gene track. Then load one
+sample's `_fwd` and `_rev` together and look at `GAPDH` (+ strand), or at
+`MYH9` (− strand) if you used the chr22 references. Is the airway library
+stranded?
 
 ::: {.callout-tip}
 ## Check your understanding

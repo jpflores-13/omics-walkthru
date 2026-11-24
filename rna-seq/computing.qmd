@@ -1,138 +1,186 @@
-# The computing environment {#sec-computing}
+# Where to run the analysis {#sec-computing}
 
-Sequencing files are too large for a laptop, so the processing happens on
-**Longleaf**, UNC's computing cluster. This chapter covers the minimum you need:
-logging in, moving around, looking at files, and asking the cluster to run a job.
+Sequencing data are big, and the tools in this book run from the command line.
+You can follow everything here on **your own laptop**, a **lab
+workstation**, or a **shared computing cluster**. This chapter explains the
+differences, so you can pick what fits and recognise the cluster words
+(*node*, *job*, *SLURM*) when you meet them.
 
-## What a cluster is
+## Choosing a computer
 
-A cluster is many computers (**nodes**) that share one file system. You log
-in to a **login node**, which is shared by everyone and meant only for
-light work: editing files, copying, submitting jobs. The real work runs on
-**compute nodes**, which you request through a scheduler called **SLURM**.
+```{mermaid}
+flowchart TD
+  Q1{"What are you doing?"} -->|"learning with the<br/>practice data"| LAP["Laptop or workstation is fine<br/>(chr22 references on 8 GB RAM;<br/>full references need ~16 GB)"]
+  Q1 -->|"a real experiment<br/>(tens of millions of reads per sample)"| Q2{"Access to a cluster?"}
+  Q2 -->|yes| CL["Cluster: batch jobs,<br/>scratch space, pipelines<br/>such as bagPipes"]
+  Q2 -->|no| WS["A workstation with lots of RAM and disk,<br/>or a cloud machine"]
+```
+
+| | Laptop | Workstation | Cluster |
+|---|---|---|---|
+| Good for | Learning, small tests, R analysis | One project at a time | Many samples, pipelines |
+| Typical RAM | 8–32 GB | 64–256 GB | Many nodes, each with lots |
+| Disk | Hundreds of GB | TBs | Large shared storage |
+| How you run tools | Type commands | Type commands | Submit **jobs** to a scheduler |
+| Software | conda | conda | conda or **modules** |
+
+A rough sense of what real data need: one human RNA-seq sample (30 M read
+pairs) is ~3–5 GB of `.fastq.gz`; aligning it needs ~8 GB RAM (HISAT2) or
+~32 GB (STAR); a whole experiment's outputs can be tens to hundreds of GB.
+
+## Operating system
+
+The tools are built for **Linux** and **macOS**. On **Windows**, install
+[WSL](https://learn.microsoft.com/windows/wsl/install) (Windows Subsystem for
+Linux), which gives you an Ubuntu terminal, and follow the Linux
+instructions inside it.
+
+## Getting the software: conda
+
+Bioinformatics tools are easiest to install with **conda**, which puts them in
+an isolated *environment* (no administrator rights needed, and versions don't
+clash between projects).
+
+1. Install [Miniforge](https://github.com/conda-forge/miniforge), a minimal conda.
+2. Create the environments for this book from the files in its repository:
+
+   ```bash
+   git clone https://github.com/jpflores-13/omics-walkthru.git
+   cd omics-walkthru
+   conda env create -f envs/rnaseq-tools.yml     # FastQC, Trim Galore, Salmon, HISAT2, samtools, ...
+   conda env create -f envs/rnaseq-r.yml         # R, DESeq2, tximport, tximeta (optional)
+   ```
+3. Turn it on in each new terminal:
+
+   ```bash
+   conda activate rnaseq-tools
+   salmon --version
+   ```
+
+::: {.callout-note}
+## Apple Silicon Macs (M1–M4)
+
+Some bioconda tools have no native ARM build yet. If `conda env create` says a
+package isn't available for `osx-arm64`, create the environment for Intel Macs
+(it runs through Rosetta):
+
+```bash
+CONDA_SUBDIR=osx-64 conda env create -f envs/rnaseq-tools.yml
+```
+:::
+
+## Clusters in five minutes
+
+A **cluster** is many computers (**nodes**) that share one file system. You
+log in to a **login node**, shared by everyone and meant only for light work
+(editing, copying, submitting). The real work runs on **compute nodes**, which
+you request from a **scheduler**. The most common scheduler is **SLURM**.
 
 ```{mermaid}
 flowchart LR
   L["Your laptop"] -- ssh --> LN["Login node<br/>(light work only)"]
-  LN -- "sbatch / srun" --> S["SLURM scheduler"]
+  LN -- "sbatch / srun" --> S["Scheduler (SLURM)"]
   S --> C1["Compute node"]
   S --> C2["Compute node"]
   S --> C3["Compute node"]
-  C1 & C2 & C3 --- FS[("Shared storage<br/>/proj, /work, /users")]
+  C1 & C2 & C3 --- FS[("Shared storage<br/>home · scratch · project")]
   LN --- FS
 ```
 
 ::: {.callout-warning}
-Don't run FastQC, Salmon, HISAT2 or anything else heavy directly on the login node.
-It slows the node down for everyone and the job may be killed. Use an
-interactive job (below) or `sbatch`.
+Don't run FastQC, Salmon, HISAT2 or anything else heavy on a login node. It
+slows the node for everyone and the process may be killed. Use an interactive
+job or `sbatch`.
 :::
 
-## Logging in
+### Storage on a cluster
 
-From the Terminal app on a Mac (or PowerShell on Windows):
+Clusters usually have three kinds of space. The names differ, but the roles
+are the same:
 
-```bash
-ssh your_onyen@longleaf.unc.edu
-```
+| Kind | Typical name | Use it for |
+|---|---|---|
+| **Home** | `~` | Scripts, configs. Small, backed up |
+| **Scratch** | `/scratch`, `/work` | Running pipelines. Large and fast, **not backed up, purged** |
+| **Project / lab** | `/proj`, `/project`, `/groups` | Raw data and results you keep. Shared, backed up |
 
-## Where things live
+A good habit: keep raw FASTQs in project space, run in scratch, and copy the
+results you want to keep back to project space.
 
-| Location | What it is for |
-|---|---|
-| `/nas/longleaf/home/<onyen>` (`~`) | Your home folder; small, backed up. Scripts and configs |
-| `/work/users/j/d/jdoe` (first letter, second letter, onyen) | Large, fast scratch space for running pipelines. **Not backed up, and old files are purged** |
-| `/proj/phanstiel_lab/` | Lab project space: raw data, references, shared results |
+### Software on a cluster: modules
 
-A sensible habit: keep raw FASTQs in `/proj`, run pipelines in `/work`, and copy
-the results you want to keep back to `/proj`.
-
-## Ten commands to start with
-
-```bash
-pwd                      # print working directory: where am I?
-ls -lh                   # list files, with human-readable sizes
-cd /proj/phanstiel_lab   # change directory
-cd ..                    # go up one level
-mkdir -p myproject/raw   # make a folder (and parents)
-cp file.txt backup/      # copy
-mv old.txt new.txt       # move or rename
-less file.txt            # page through a file (q to quit)
-zcat reads.fastq.gz | head -8   # first 8 lines of a gzipped file
-wc -l file.txt           # count lines
-```
-
-Press **Tab** to autocomplete file names. It saves typing and prevents typos.
-
-## Software: modules
-
-Longleaf has many versions of each tool installed, and you pick one with
-`module`. This is exactly what bagPipes does at the top of each rule:
+Clusters often offer preinstalled software as **environment modules**.
+Pipelines such as bagPipes load tools this way at the start of each step:
 
 ```bash
 module avail salmon          # what versions exist?
 module load salmon/1.10.3    # use this one
-salmon --version
-module list                  # what do I have loaded?
+module list                  # what is loaded
 module purge                 # unload everything
 ```
 
-## Running jobs with SLURM
+conda works on clusters too, and gives you the same versions as on your laptop.
 
-### Interactive jobs: for trying things out
+### Running jobs with SLURM
+
+**Interactive job**, to work on a compute node by hand:
 
 ```bash
-srun -p interact -n 1 --mem=8g -t 2:00:00 --pty bash
+srun -n 1 -c 4 --mem=8g -t 2:00:00 --pty bash      # add -p <partition> if your cluster needs one
 ```
 
-This gives you a shell on a compute node for two hours. Everything in the
-hands-on parts of this book can be run inside one of these.
-
-### Batch jobs: for real runs
-
-You write a script with `#SBATCH` lines describing what you need, and
-submit it. `RNApipe.sh` in bagPipes is one of these:
+**Batch job**, for real runs. Write a script with `#SBATCH` lines saying
+what you need, then submit it:
 
 ```bash
-#! /bin/bash -login
-#SBATCH -J RNApipeCore      # job name
-#SBATCH -t 4320             # time limit in minutes (3 days)
-#SBATCH -p general          # partition (queue)
-#SBATCH --mem=2gb           # memory
-#SBATCH -o "%x-%j.out"      # log file: <jobname>-<jobid>.out
+#!/bin/bash
+#SBATCH -J my_job           # job name
+#SBATCH -t 4:00:00          # time limit
+#SBATCH -c 4                # CPUs
+#SBATCH --mem=16g           # memory
+#SBATCH -o %x-%j.out        # log file: <jobname>-<jobid>.out
+conda activate rnaseq-tools  # or: module load ...
+salmon quant ...
 ```
 
 ```bash
-sbatch RNApipe.sh            # submit
-squeue -u $USER              # what's running / waiting?
+sbatch my_job.sh            # submit
+squeue -u $USER             # what's running / waiting?
 sacct -j 123456 --format=JobID,JobName,State,Elapsed,MaxRSS   # how did it go?
-scancel 123456               # cancel a job
+scancel 123456              # cancel
 ```
 
-::: {.callout-note}
-## Why does `RNApipe.sh` only ask for 2 GB?
+Other schedulers (PBS, LSF, SGE) work the same way with different command
+names (`qsub`, `bsub`, `qstat`).
 
-That job only runs **Snakemake**, which acts as a manager. Snakemake then
-submits each step (FastQC, Salmon, ...) as its own SLURM job with its own
-memory request. You'll see dozens of jobs appear in `squeue`. See
-[Snakemake in plain language](snakemake.qmd).
+::: {.callout-tip collapse="true"}
+## On UNC Longleaf (Phanstiel lab)
+
+- Log in: `ssh <onyen>@longleaf.unc.edu`.
+- Storage: home `/nas/longleaf/home/<onyen>`; scratch
+  `/work/users/<first letter>/<second letter>/<onyen>` (purged); lab space
+  `/proj/phanstiel_lab/`.
+- Interactive jobs: `srun -p interact -n 1 --mem=8g -t 2:00:00 --pty bash`.
+- Batch partition: `-p general`.
+- Software: everything bagPipes needs is available as modules (`module avail`).
+- Prebuilt references: `/proj/phanstiel_lab/Reference/human/hg38/` (see
+  [Practice setup](practice-setup.qmd)).
 :::
 
 ::: {.callout-tip}
 ## Check your understanding
 
-1. You want to look at the first read in a FASTQ file. Is it OK to do that
+1. You want to look at the first read in a FASTQ file on a cluster. Is it OK
    on the login node?
-2. Where should a 200 GB pipeline output folder go while it is being made?
-3. What does `module load trim_galore/0.6.10` do?
+2. Where should a 200 GB pipeline output go while it's being made?
+3. You're on a Windows laptop. What do you install first?
 
 ::: {.callout-note collapse="true" appearance="simple"}
 ## Answers
 
 1. Yes. `zcat file.fastq.gz | head -4` is light work.
-2. `/work`, which is fast and large. Copy the results you want to keep to `/proj`
-   afterwards, because `/work` is purged.
-3. It puts that version of Trim Galore (and its dependency, Cutadapt) on your
-   `PATH` so the `trim_galore` command works in this shell.
+2. Scratch space: fast and large. Copy what you keep to project space after,
+   because scratch is purged.
+3. WSL, then Miniforge inside it.
 :::
 :::

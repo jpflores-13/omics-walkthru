@@ -9,15 +9,16 @@ example yourself.
 
 ## The shell in one paragraph
 
-When you open Terminal and `ssh` into Longleaf, you are talking to a program
-called **bash**. It shows a **prompt** (something like
-`[jdoe@longleaf-login1 ~]$`), waits for a line, runs it, prints the result,
+When you open a terminal (the *Terminal* app on a Mac, an Ubuntu window in
+WSL on Windows, or an `ssh` session on a cluster), you are talking to a program
+called the **shell**, usually **bash** or **zsh**. It shows a **prompt**
+(something like `jdoe@laptop ~ %` or `[jdoe@login1 ~]$`), waits for a line, runs it, prints the result,
 and shows the prompt again. A command is a program name followed by
 **arguments**, separated by spaces:
 
 ```bash
-ls   -l   -h   /proj/phanstiel_lab
-#^   ^^^^^^^   ^^^^^^^^^^^^^^^^^^^
+ls   -l   -h   ~/omics-walkthru-practice
+#^   ^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^
 #program options  argument (what to act on)
 ```
 
@@ -31,15 +32,15 @@ Everything lives in one tree that starts at `/` (the **root**).
 
 ```
 /
-├── nas/longleaf/home/jdoe/        <- your home, also called ~
-├── proj/phanstiel_lab/
-│   ├── Data/
-│   └── Reference/human/hg38/
-└── work/users/j/d/jdoe/
+├── Users/jdoe/                     <- your home on a Mac, also called ~  (Linux: /home/jdoe)
+│   └── omics-walkthru-practice/
+│       ├── practice_data/
+│       └── references/
+└── scratch/  (on a cluster)        <- big shared spaces sit elsewhere in the tree
 ```
 
 - An **absolute path** starts at `/` and works from anywhere:
-  `/proj/phanstiel_lab/Reference/human/hg38/`.
+  `/Users/jdoe/omics-walkthru-practice/references/`.
 - A **relative path** starts from where you are now (`pwd`):
   `output/align/sample_sorted.bam`. bagPipes uses relative paths, which
   is why you must `cd` into the bagPipes folder before running it.
@@ -206,7 +207,7 @@ hisat2 -x index -1 R1.fq.gz -2 R2.fq.gz | samtools view -u | samtools sort -o ou
 ### A worked example: what feature types are in a GTF?
 
 ```bash
-GTF=/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf
+source ~/omics-walkthru-practice/env.sh      # defines $GTF (see Practice setup)
 grep -v "^#" $GTF | cut -f3 | sort | uniq -c | sort -k1,1nr
 ```
 
@@ -217,15 +218,19 @@ lines like `exon`, `CDS`, `UTR`, `transcript`, `gene`, each with a count.
 ## Variables, wildcards and loops
 
 ```bash
-D=/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled   # a variable
-ls $D                        # use it with $
-ls $D/*_R1_001.fastq.gz      # * matches anything: all R1 files
+DATA=~/omics-walkthru-practice/practice_data   # make a variable (no spaces around =)
+echo $DATA                    # use it with $
+ls $DATA/*_R1_001.fastq.gz    # * matches anything: all R1 files
 
 # do something to every file
-for f in $D/*_R1_001.fastq.gz; do
-  echo "$(basename $f): $(( $(zcat $f | wc -l) / 4 )) reads"
+for f in $DATA/*_R1_001.fastq.gz; do
+  echo "$(basename $f): $(( $(gzip -dc $f | wc -l) / 4 )) reads"
 done
 ```
+
+Variables last only until you close the terminal. That's why the
+[practice setup](practice-setup.qmd#shortcuts-for-every-hands-on-box) saves
+them in `env.sh`, which you load with `source`.
 
 `basename` strips the folder from a path; bagPipes uses it to rename
 outputs (`$(basename {input.R1} .fastq.gz)` also strips the ending).

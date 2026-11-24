@@ -6,6 +6,24 @@
 `quant/{runName}_tximport.rds` · **Also covered:** tximeta, the newer
 alternative ([below](#tximeta))
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s1,s2,s3,s4,s5,s6 other;
+  class s7 here;
+```
+:::
+
 ## The problem it solves
 
 Salmon reports **transcripts** (each isoform), one file per sample.
@@ -64,8 +82,8 @@ matrices end up named `NA` instead of by sample. The **order** is still the
 samplesheet order, so you can fix the names when you load the object:
 
 ```r
-txi <- readRDS("output/quant/IMGL_iMGL_WT_1_tximport.rds")
-ss  <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt")
+txi <- readRDS("output/quant/airway_ASM_tximport.rds")           # <runName>_tximport.rds
+ss  <- read.delim("output/airway_ASM_RNApipeSamplesheet.txt")
 colnames(txi$counts)    <- ss$sn
 colnames(txi$abundance) <- ss$sn
 colnames(txi$length)    <- ss$sn
@@ -77,12 +95,39 @@ The fix in the script is `names(files) <- samplesheet[, "sn"]`.
 ::: {.callout-note}
 ## Transcript IDs have to match
 
-`tximport` matches Salmon's `Name` column to `TXNAME` in the GTF. If the
-Salmon index was built from a different GENCODE release, or with `--gencode`
-(which strips the `|...` part of the header) and the GTF IDs keep their
-versions, some or all transcripts won't match and the script fails or drops
-them. Always build the Salmon index from the same release as the GTF.
+`tximport` matches Salmon's `Name` column to `TXNAME` in the GTF. GENCODE's
+transcript FASTA has long headers (`ENST00000456328.2|ENSG00000290825.1|...`).
+Build the Salmon index with **`--gencode`**, which trims each name to the
+transcript ID (`ENST00000456328.2`) so it matches the GTF's `transcript_id`.
+Without it, nothing matches (unless you call `tximport(..., ignoreAfterBar = TRUE)`).
+A Salmon index and GTF from **different releases** will also only partly
+match. The practice `get_references.sh` script does all of this for you.
 :::
+
+## Try it {#try-it-tximport}
+
+Run tximport yourself on the four Salmon folders from the
+[Salmon Try it](salmon.qmd#try-it), in R. Start R from a terminal where you ran `source $WALK/env.sh` (with
+`conda activate rnaseq-r`, then `R`). In RStudio those variables are
+usually empty, so type the paths instead of `Sys.getenv(...)`:
+
+```r
+library(tximport)
+library(GenomicFeatures)
+
+walk    <- Sys.getenv("WALK")           # or e.g. "~/omics-walkthru-practice"
+samples <- c("N61311_untrt", "N61311_dex", "N052611_untrt", "N052611_dex")
+files   <- file.path(walk, "work", "quant", samples, "quant.sf")
+names(files) <- samples                 # this is what names the columns
+stopifnot(all(file.exists(files)))
+
+txdb    <- makeTxDbFromGFF(Sys.getenv("GTF"), format = "gtf")
+tx2gene <- select(txdb, keys = keys(txdb, "GENEID"), keytype = "GENEID", columns = "TXNAME")[, 2:1]
+
+txi <- tximport(files, type = "salmon", tx2gene = tx2gene)
+dim(txi$counts)
+head(txi$counts[order(-rowSums(txi$counts)), ])     # the most-counted genes
+```
 
 ## tximeta: tximport that remembers where the data came from {#tximeta}
 
@@ -123,11 +168,13 @@ flowchart LR
 ```r
 library(tximeta)
 
-ss <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt", na.strings = "")
+samples <- c("N61311_untrt", "N61311_dex", "N052611_untrt", "N052611_dex")
+quant   <- file.path(Sys.getenv("WALK"), "work", "quant")   # the Salmon Try-it folders
 coldata <- data.frame(
-  files     = file.path("output/quant", ss$sn, "quant.sf"),
-  names     = ss$sn,                                      # sample names: no NA problem
-  condition = factor(paste(ss$Treatment, ss$Time, sep = "_"))
+  files     = file.path(quant, samples, "quant.sf"),
+  names     = samples,
+  donor     = factor(sub("_.*", "", samples)),
+  treatment = factor(sub(".*_", "", samples), levels = c("untrt", "dex"))
 )
 stopifnot(all(file.exists(coldata$files)))
 
@@ -154,13 +201,13 @@ index came from:
 
 ```r
 makeLinkedTxome(
-  indexDir = "/proj/phanstiel_lab/Reference/human/hg38/indices/salmon/",
+  indexDir = Sys.getenv("SALMON_INDEX"),
   source   = "LocalGENCODE",                 # a "Local" prefix means "not the official files"
   organism = "Homo sapiens",
   release  = "49",
   genome   = "GRCh38",
-  fasta    = "/path/to/the/transcripts.fa.gz",   # the FASTA the index was built from
-  gtf      = "/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf",
+  fasta    = file.path(Sys.getenv("REF"), "gencode.v49.transcripts.fa.gz"),  # chr22 mode: "chr22_transcripts.fa.gz"
+  gtf      = Sys.getenv("GTF"),
   jsonFile = "gencode.v49_linkedTxome.json"      # share this file with the lab
 )
 se <- tximeta(coldata)

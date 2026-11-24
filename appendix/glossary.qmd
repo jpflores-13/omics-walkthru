@@ -13,7 +13,7 @@
 | **Binary file** | File meant for programs, not people; looks like garbage in `less` |
 | **Biological replicate** | Independent samples (different cultures, animals, differentiations) of the same condition |
 | **CIGAR** | String in a SAM/BAM line describing how a read aligns (`M`, `I`, `D`, `N`, `S`, ...) |
-| **Cluster (HPC)** | Many computers sharing storage, managed by a scheduler (Longleaf) |
+| **Cluster (HPC)** | Many computers sharing storage, managed by a scheduler (e.g. UNC's Longleaf) |
 | **Coordinate system** | 0-based (BED) or 1-based (GTF, SAM) counting of genome positions |
 | **Count matrix** | Table of reads per gene (rows) per sample (columns); the input to DESeq2 |
 | **DAG** | Directed acyclic graph: the dependency chart of a workflow |
@@ -37,7 +37,8 @@
 | **Isoform / transcript** | One of the possible spliced RNAs from a gene |
 | **Login node** | Shared entry computer on a cluster; light work only |
 | **MAPQ** | Mapping quality: aligner's confidence that a read is in the right place |
-| **Module** | Longleaf's way of choosing software versions (`module load salmon/1.10.3`) |
+| **Module** | How many clusters let you choose software versions (`module load salmon/1.10.3`) |
+| **conda / environment** | A tool that installs software into isolated *environments* without admin rights (`conda activate rnaseq-tools`) |
 | **Multi-mapper** | A read that aligns equally well to several places |
 | **Paired-end** | Sequencing each fragment from both ends (R1 and R2) |
 | **Pipe (`\|`)** | Sends one command's output straight into the next command |
@@ -52,7 +53,7 @@
 | **Soft clip** | Read bases kept in the BAM but not aligned (`S` in CIGAR) |
 | **Splice-aware aligner** | Aligner that can split a read across an intron (HISAT2, STAR) |
 | **Stranded library** | Library that preserves which DNA strand the RNA came from |
-| **SLURM** | The job scheduler on Longleaf (`sbatch`, `squeue`, `scancel`) |
+| **SLURM** | The most common cluster job scheduler (`sbatch`, `squeue`, `scancel`) |
 | **stdout / stderr** | A program's two output streams: results and messages |
 | **Technical replicate** | Re-sequencing or re-prepping the same biological sample |
 | **TPM** | Transcripts per million: length- and depth-normalised abundance; sums to 10^6^ per sample |

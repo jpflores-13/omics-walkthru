@@ -163,7 +163,6 @@ For ChIP and ATAC data you'll meet BED variants with extra columns
 ### bedtools: the Swiss army knife for intervals
 
 ```bash
-module load bedtools
 sort -k1,1 -k2,2n genes.bed > genes.sorted.bed          # most tools want sorted input
 bedtools intersect -a genes.bed -b regions.bed -u       # genes overlapping any region
 bedtools merge -i genes.sorted.bed                      # join overlapping intervals
@@ -201,7 +200,6 @@ the whole file. bagPipes' `signal` rules write bigWigs with
 Because it is binary, you need tools to look inside:
 
 ```bash
-module load ucsctools   # name may differ: try `module avail ucsc`
 bigWigInfo sample.bw                          # chromosomes, coverage, mean, min, max
 bigWigToBedGraph sample.bw stdout -chrom=chr7 -start=5527000 -end=5531000
 bigWigAverageOverBed sample.bw genes.bed out.tab   # average signal per gene

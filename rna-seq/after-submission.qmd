@@ -63,10 +63,10 @@ each tube, has to be right: if two samples share an index, their reads end up mi
 The output is named in Illumina's style:
 
 ```
-IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz
-└────── your sample name ─────┘└S#┘└R1┘└001┘
-                                sample  read  chunk
-                                number  1 or 2
+WT_Treated_Rep1_S4_R1_001.fastq.gz
+└─ your sample name ─┘└S#┘└R1┘└001┘
+                     sample read chunk
+                     number 1 or 2
 ```
 
 Sometimes a sample is sequenced on several lanes and you get `_L001_`,

@@ -7,19 +7,20 @@ count tables, genome-browser tracks and QC reports. You don't need any
 background in programming or bioinformatics: the Foundations part starts
 from "what is a terminal?" and "what is a `.gz` file?".
 
-The first module covers **bulk RNA-seq** using the lab's
-[bagPipes](https://github.com/PhanstielLab/bagPipes) `RNApipe` workflow. Each
-chapter takes one step (one Snakemake *rule*), explains what problem it
-solves, shows the command bagPipes runs, and tells you how to judge whether it
-worked. Later modules will cover **ATAC-seq** and
+The first module covers **bulk RNA-seq**. Each chapter takes one processing
+step, explains what problem it solves, shows the command, has you run it
+yourself on a small practice dataset, and tells you how to judge whether it
+worked. Everything runs on a laptop, a workstation or a computing cluster. The
+steps follow [bagPipes](https://github.com/PhanstielLab/bagPipes) `RNApipe`, a
+Snakemake pipeline (Trim Galore → Salmon + HISAT2 → deepTools → tximport), but
+the ideas apply to any RNA-seq pipeline. Later modules will cover **ATAC-seq** and
 **ChIP-seq / CUT&Tag / CUT&RUN** in the same way.
 
 ::: {.callout-note}
-**This is a curriculum, not a manual.** The [bagPipes
-README](https://github.com/PhanstielLab/bagPipes) is the reference for running
-the pipeline. This book explains the *why* behind each step, so the README and
-the output files make sense. If the two ever disagree, trust the code in
-`workflows/RNApipeCore.snakefile`.
+**This is a curriculum, not a manual.** It explains the *why* behind each
+step, so any pipeline's documentation and output files make sense. For running
+bagPipes itself, its [README](https://github.com/PhanstielLab/bagPipes) and code
+are the reference.
 :::
 
 ## What you will be able to do
@@ -38,18 +39,39 @@ By the end of the RNA-seq module you should be able to:
    which output each one feeds.
 6. Open a BAM file and a bigWig track in IGV and interpret what you see,
    including strand-specific tracks.
-7. Fill in a samplesheet and config file, launch `RNApipe` on Longleaf, check
+7. Fill in a samplesheet and config file, launch `RNApipe` on a cluster, check
    on it, and recover from a failed run.
 8. Load the results into R with `tximport` or `tximeta` and start a DESeq2
    analysis.
 9. Explain how processing changes for nascent-RNA assays such as TT-seq.
+
+## The data, at a glance
+
+What happens to your reads, file by file. Each box is a kind of file and each
+arrow a tool (and a chapter):
+
+```{mermaid}
+flowchart LR
+  FQ[("FASTQ.gz<br/>raw reads")] -->|"FastQC"| QC["QC report<br/>(HTML)"]
+  FQ -->|"Trim Galore"| TQ[("trimmed<br/>FASTQ.gz")]
+  TQ -->|"Salmon<br/>+ transcriptome index"| SF[("quant.sf<br/>per transcript")]
+  SF -->|"tximport / tximeta<br/>+ GTF"| CM[("gene × sample<br/>counts")]
+  CM -->|"DESeq2 (R)"| DE[("differential<br/>expression table")]
+  TQ -->|"HISAT2 + samtools<br/>+ genome index"| BAM[("sorted BAM<br/>+ .bai")]
+  BAM -->|"bamCoverage"| BW[("bigWig<br/>tracks")]
+  BW -->|"IGV"| VIEW["look at<br/>the data"]
+  QC & TQ & SF & BAM -.->|"MultiQC"| MQ["one QC<br/>report"]
+
+  classDef file fill:#e8f1fa,stroke:#2c7bb6;
+  class FQ,TQ,SF,CM,DE,BAM,BW file;
+```
 
 ## The road map
 
 ```{mermaid}
 flowchart LR
   subgraph F["Foundations"]
-    A1["After submission<br/>sequencing, demultiplexing"] --> A2["Computing<br/>Longleaf, SLURM"] --> A3["The shell<br/>plain text, gzip, pipes"]
+    A1["After submission<br/>sequencing, demultiplexing"] --> A2["Computing + practice setup<br/>laptop or cluster, conda"] --> A3["The shell<br/>plain text, gzip, pipes"]
     A3 --> A4["File formats<br/>FASTQ, FASTA, GTF, BED,<br/>bigWig, SAM/BAM"] --> A5["Tool landscape<br/>aligners, pseudoaligners,<br/>counters"]
   end
   subgraph P["RNA-seq, step by step"]
@@ -59,7 +81,7 @@ flowchart LR
     B1 & B2 & B3 & B4 --> B7["MultiQC"]
   end
   subgraph R["Running it yourself"]
-    C1["Snakemake in<br/>plain language"] --> C2["Running RNApipe"] --> C3["Into R / DESeq2"]
+    C1["Snakemake in<br/>plain language"] --> C2["Running a whole<br/>pipeline"] --> C3["Into R / DESeq2"]
   end
   F --> P --> R
 ```
@@ -69,21 +91,32 @@ flowchart LR
 - **On your own:** read the chapters in order. Each one ends with a short
   *Check your understanding* box; the answers are folded underneath.
 - **In a group:** the [Teaching guide](teaching-guide.qmd) splits the module
-  into sessions with hands-on exercises on Longleaf.
+  into sessions with hands-on exercises.
 - **As a reference:** the [Glossary](appendix/glossary.qmd),
   [Command cheat sheet](appendix/cheatsheet.qmd) and
   [Troubleshooting](appendix/troubleshooting.qmd) appendices are meant for
   looking things up.
 
 ::: {.callout-tip}
-## Where does the data come from?
+## What you need
 
-The exercises use the small test dataset that ships with bagPipes: four iMGL
-RNA-seq libraries subsampled to 100,000 read pairs each, on Longleaf at
-`/proj/phanstiel_lab/Data/processed/subsamples/rna/PE_100k/subsampled/`.
-They run in minutes. If you want to practise on a published dataset, the
-companion guide [download-public-data](https://jpflores-13.github.io/download-public-data)
-shows how to pull FASTQ files from GEO/SRA with `fasterq-dump`.
+- A computer running macOS or Linux (on Windows, WSL), with a terminal.
+- About 2 GB of free disk for the practice data and the small (chr22)
+  references, or ~30 GB for full human references.
+- No special access: the practice data (four airway samples, GEO GSE52778) and
+  the references (GENCODE) are public, and [Practice setup](rna-seq/practice-setup.qmd)
+  downloads them for you. A computing cluster is only needed for the
+  whole-pipeline chapter.
+
+The companion guide [download-public-data](https://jpflores-13.github.io/download-public-data)
+explains how to get any public dataset.
+:::
+
+::: {.callout-tip collapse="true"}
+## Boxes like this one are for UNC Longleaf / Phanstiel lab users
+
+Folded boxes with this title give local shortcuts (prebuilt references, cluster
+paths). Everyone else can skip them.
 :::
 
 ## Conventions
@@ -91,8 +124,12 @@ shows how to pull FASTQ files from GEO/SRA with `fasterq-dump`.
 - `Code in this font` is something you type, a file name, or a program name.
 - Blocks with a grey background are commands. Lines that start with `#` are
   comments and are ignored by the computer.
+- `$DATA`, `$REF`, `$WALK` are shortcuts to your practice folders, set up in
+  [Practice setup](rna-seq/practice-setup.qmd#shortcuts-for-every-hands-on-box).
+- `<something>` in angle brackets is a placeholder: replace it, brackets and
+  all, with your own value.
 - `{sampleName}` in curly braces is a placeholder that Snakemake fills in,
-  for example `IMGL_iMGL_WT_Ab_24h_1_1`.
+  for example `airway_ASM_N61311_untrt`.
 - Tool versions quoted in this book come from `config/RNAconfig.yaml` in
   bagPipes (for example Salmon 1.10.3, HISAT2 2.2.1). Check your copy, because
   they change.

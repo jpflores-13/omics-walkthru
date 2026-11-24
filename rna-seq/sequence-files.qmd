@@ -9,7 +9,7 @@ qualities). This chapter opens each one and goes through it line by line.
 ### What it looks like
 
 ```bash
-zcat sub_IMGL_RNA_MGL_F_Ab_24h_S_1-1-1_S4_R1_001.fastq.gz | head -8
+zcat $DATA/N61311_untrt_R1_001.fastq.gz | head -8     # or: gzip -dc ... | head -8
 ```
 
 ```
@@ -23,7 +23,9 @@ GCCCAGCAGGAGCTGGAGAAGGCCAAGGAGGAGCTGCAGGCGCAGCTGGAGCAGGCCACA
 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:FFFFFFFFFFFFFFFFFFFFFFFF
 ```
 
-(Example reads; your instrument name and flow cell will differ.) Each read
+(Example reads from a modern instrument. The practice data come from a
+public archive, which adds its own prefix: `@SRR1039508.1 HWI-ST177:290:C0TECACXX:1:1101:1225:2130/1`.
+After the run accession, it's the same kind of name.) Each read
 is exactly **four lines**:
 
 | Line | Starts with | Contains |
@@ -111,7 +113,7 @@ zcat R1.fastq.gz | head -400000 | gzip > test_R1.fastq.gz
 zcat R2.fastq.gz | head -400000 | gzip > test_R2.fastq.gz
 ```
 
-**seqkit** is a fast all-purpose tool for FASTQ/FASTA (`module avail seqkit`):
+**seqkit** is a fast all-purpose tool for FASTQ/FASTA (in the `rnaseq-tools` environment):
 
 ```bash
 seqkit stats *.fastq.gz          # reads, bases, min/avg/max length per file
@@ -184,7 +186,6 @@ means in the bagPipes config.
 ### Useful things to do with FASTA
 
 ```bash
-module load samtools
 samtools faidx genome.fa                 # build genome.fa.fai (an index)
 cut -f1,2 genome.fa.fai | head           # chromosome names and lengths
 samtools faidx genome.fa chr7:5527148-5530601   # pull out a region (here: around ACTB)

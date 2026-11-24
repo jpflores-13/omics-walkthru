@@ -19,6 +19,7 @@ book:
       chapters:
         - rna-seq/after-submission.qmd
         - rna-seq/computing.qmd
+        - rna-seq/practice-setup.qmd
         - rna-seq/shell-basics.qmd
         - rna-seq/sequence-files.qmd
         - rna-seq/annotation-files.qmd

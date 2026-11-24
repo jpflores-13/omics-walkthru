@@ -1,15 +1,35 @@
-# Running RNApipe on Longleaf {#sec-running}
+# Running the whole pipeline (bagPipes RNApipe) {#sec-running}
 
-This chapter is the hands-on walkthrough: from an empty folder to a finished
-run on the bagPipes test data. Follow it once with the test data before
-using your own.
+The step chapters ran each tool by hand. A **pipeline** runs all of them, for
+every sample, in the right order, on a cluster. This chapter walks through one
+run of [bagPipes](https://github.com/PhanstielLab/bagPipes) `RNApipe` on the
+practice data, from an empty folder to finished outputs.
+
+```{mermaid}
+flowchart LR
+  A["1. Get the code"] --> B["2. Samplesheet<br/>(which files = which sample)"] --> C["3. Config<br/>(references, naming)"] --> D["4. Dry run<br/>snakemake -n"] --> E["5. Launch<br/>sbatch RNApipe.sh"] --> F["6. Watch<br/>squeue, logs"]
+  F -->|"error"| G["7. Fix, unlock,<br/>rerun"] --> E
+  F -->|"done"| H["8. Keep outputs,<br/>config, samplesheet"]
+```
+
+::: {.callout-important}
+## What bagPipes needs
+
+bagPipes is written for a **SLURM cluster with environment modules**: every
+step runs `module load <tool>/<version>`, and `RNApipe.sh` is submitted with
+`sbatch`. On another setup (a laptop, a different scheduler, conda instead of
+modules), the ideas in this chapter still apply, but you'd adapt the
+`module load` lines or use a portable pipeline such as
+[nf-core/rnaseq](https://nf-co.re/rnaseq). Everything the pipeline does, you've
+already done by hand in the step chapters.
+:::
 
 ## 1. Get the code
 
-Run pipelines in `/work`, where there's space:
+Work in your cluster's scratch space, where there's room:
 
 ```bash
-cd /work/users/j/d/jdoe            # your own /work folder
+cd /path/to/scratch                 # e.g. /scratch/<user>
 git clone https://github.com/PhanstielLab/bagPipes.git
 cd bagPipes
 ls
@@ -25,19 +45,23 @@ files:
 
 | Column | Example | Required? | Notes |
 |---|---|---|---|
-| `Project` | `IMGL` | used in names | |
-| `Cell_Type` | `iMGL` | used in names | |
-| `Genotype` | `WT` | used in names | |
-| `Treatment` | `Ab`, `NA` | used in names | Use a word such as `NA` or `none` for "no treatment"; don't leave it empty |
-| `Time` | `24h`, `00h` | used in names | Zero-pad (`00h`, `06h`) so names sort nicely |
-| `Bio_Rep`, `Tech_Rep`, `Seq_Rep` | `1` | used in names | |
-| `Read1`, `Read2` | `sample_R1_001.fastq.gz` | **yes** | File names only |
-| `Sequencing_Directory` | `/proj/.../subsampled/` | **yes** | The folder holding the FASTQs |
+| `Project` | `airway` | used in names | |
+| `Cell_Type` | `ASM` | used in names | |
+| `Donor` | `N61311` | used in names | |
+| `Treatment` | `untrt`, `dex` | used in names | Use a word such as `none` for "no treatment"; don't leave it empty |
+| `Bio_Rep` | `1` | optional | |
+| `Read1`, `Read2` | `N61311_untrt_R1_001.fastq.gz` | **yes** | File names only |
+| `Sequencing_Directory` | `/path/to/practice_data/` | **yes** | The folder holding the FASTQs, ending in `/` |
 
 The metadata columns can be anything you like, as long as `fileNamesFrom` and
-`mergeBy` in the config name columns that exist. The shipped
-`RNAsamplesheet.txt` already points at the 100 k test data, so for the
-practice run you can leave it as is.
+`mergeBy` in the config name columns that exist. (The samplesheet that ships
+with bagPipes uses `Genotype`, `Time`, `Tech_Rep` and others.) The
+[practice setup](practice-setup.qmd) script already wrote a samplesheet for the
+practice data, with the right folder filled in. Copy it over the shipped one:
+
+```bash
+cp $DATA/RNAsamplesheet.txt RNAsamplesheet.txt
+```
 
 ```bash
 column -t -s $'\t' RNAsamplesheet.txt | less -S     # view it lined up
@@ -53,9 +77,31 @@ no `/`, and **no `_` inside a value**, since `_` is the separator.
 
 Open `config/RNAconfig.yaml` in an editor (`nano config/RNAconfig.yaml`).
 
-**Choose the reference.** In the current bagPipes `main`, the three
-reference lines are all **commented out** (`##`). Uncomment **one block**: all
-three lines from the same build. For human hg38 with GENCODE v49:
+**Choose the reference.** In the current bagPipes `main`, the reference lines
+are all **commented out** (`##`). Add one block of three lines, all from the same
+build: the paths that `get_references.sh` printed
+([Practice setup](practice-setup.qmd#the-references)):
+
+```yaml
+salmon: '/path/to/references/salmon_index_full'
+hisat2: '/path/to/references/hisat2_index_full/genome'
+gtf: '/path/to/references/gencode.v49.primary_assembly.annotation.gtf'
+```
+
+YAML is strict: each key starts at the beginning of the line, then `: `, then
+the path in quotes. Check the paths exist (`ls` each one; for `hisat2`,
+`ls /path/to/references/hisat2_index_full/genome*`).
+
+**Naming** for the practice samplesheet:
+
+```yaml
+samplesheet: 'RNAsamplesheet.txt'
+fileNamesFrom: ['Project', 'Cell_Type', 'Donor', 'Treatment']   # → airway_ASM_N61311_untrt
+mergeBy: ['Project', 'Cell_Type', 'Treatment']                  # → airway_ASM_untrt (donors pooled)
+```
+
+::: {.callout-tip collapse="true"}
+## Phanstiel lab: the prebuilt Longleaf references
 
 ```yaml
 salmon: '/proj/phanstiel_lab/Reference/human/hg38/indices/salmon/'
@@ -63,13 +109,10 @@ hisat2: '/proj/phanstiel_lab/Reference/human/hg38/indices/hisat2/hg38_gencode'
 gtf: '/proj/phanstiel_lab/Reference/human/hg38/annotations/gencode.v49.primary_assembly.annotation.gtf'
 ```
 
-(Delete the leading `## `; YAML is strict about indentation, so the key must
-start at the beginning of the line.) Check the paths exist:
-
-```bash
-ls /proj/phanstiel_lab/Reference/human/hg38/indices/salmon/
-ls /proj/phanstiel_lab/Reference/human/hg38/indices/hisat2/hg38_gencode*
-```
+These three lines are already in the config, commented out; delete the leading
+`## `. Run from `/work`, and copy results to `/proj` when done. The
+module versions in the config match Longleaf's.
+:::
 
 **Set the other keys** to fit your experiment:
 
@@ -79,7 +122,7 @@ ls /proj/phanstiel_lab/Reference/human/hg38/indices/hisat2/hg38_gencode*
 | `fileNamesFrom` | Columns joined to make each sample's name |
 | `mergeBy` | Columns that define replicate groups for merged tracks; `''` to turn off ([Merging](merging.qmd)) |
 | `stranded` | `True` to make `_fwd`/`_rev` tracks (only meaningful for stranded libraries) |
-| `*Vers` | Module versions. Only change them if Longleaf removes one |
+| `*Vers` | Module versions. Must exist on your cluster (`module avail <tool>`) |
 
 ## 4. Launch
 
@@ -97,7 +140,7 @@ and then the `mergeSignal` workflow.
 From an interactive job, with the environment set up:
 
 ```bash
-module load python/3.12.4
+module load python/3.12.4          # or any Python 3.11+
 python3 -m venv env && source env/bin/activate && pip install -r config/requirements.txt pandas snakemake-executor-plugin-slurm
 mkdir -p output
 snakemake -s workflows/RNApipeCore.snakefile --configfile config/RNAconfig.yaml -n
@@ -139,7 +182,7 @@ Snakemake prints lines like `5 of 33 steps (15%) done`. At the end you'll see
 
 ## 7. What to keep
 
-When the run is done, copy to `/proj` (or wherever your lab keeps results):
+When the run is done, copy to permanent storage (scratch space is purged):
 
 - `output/QC/{runName}_multiqc_report.html` and `_multiqc_data/`
 - `output/quant/` (all `quant.sf` + the `_tximport.rds`)
@@ -151,17 +194,20 @@ When the run is done, copy to `/proj` (or wherever your lab keeps results):
 ```bash
 git rev-parse HEAD > output/bagPipes_commit.txt
 cp config/RNAconfig.yaml RNAsamplesheet.txt output/
-rsync -av output/ /proj/phanstiel_lab/<your/project/folder>/
+rsync -av output/ /path/to/permanent/storage/<project>/
 ```
 
 ::: {.callout-tip}
 ## Exercise
 
-Run the test data end to end. Then answer from the outputs alone:
+Run the practice data end to end. Then answer from the outputs alone:
 
-1. What is the run name, and where does it appear?
+1. What is the run name (hint: `airway_ASM`), and where does it appear?
 2. What library type did Salmon detect for each sample?
 3. Which sample has the lowest alignment rate?
-4. In IGV, is *GAPDH* signal in the `_fwd` or `_rev` track?
+4. In IGV, is *GAPDH* signal in the `_fwd` or `_rev` track, or both?
 5. How long did the slowest `quant` job take? (Hint: `output/benchmarks/`.)
+6. Compare the pipeline's `quant.sf` for `airway_ASM_N61311_untrt` with yours
+   from the [Salmon Try it](salmon.qmd#try-it). Are the numbers the same? Why
+   or why not?
 :::

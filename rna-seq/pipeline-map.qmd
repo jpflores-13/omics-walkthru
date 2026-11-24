@@ -37,6 +37,42 @@ The two branches after trimming answer **different questions**:
 | **Salmon → tximport** | *How much* of each gene is there? | Gene-level count matrix (`_tximport.rds`) | Differential expression (DESeq2) |
 | **HISAT2 → bamCoverage** | *Where* in the genome do the reads fall? | BAMs and bigWig tracks | Looking at data in IGV, figures, QC |
 
+## Files in, files out
+
+The same pipeline drawn as **files** (rounded boxes) and the **tools** that turn
+one into the next (arrow labels). The references each tool needs are on the left.
+
+```{mermaid}
+flowchart LR
+  subgraph REF["References (made once)"]
+    direction TB
+    TXI[("Salmon index<br/>from transcript FASTA")]
+    GI[("HISAT2 index<br/>from genome FASTA")]
+    GTF[("GTF<br/>gene annotation")]
+  end
+  R1[("sample_R1.fastq.gz<br/>sample_R2.fastq.gz")] -->|"Trim Galore"| T1[("_R1_trimmed.fastq.gz<br/>_R2_trimmed.fastq.gz")]
+  R1 -->|"FastQC"| H1["_fastqc.html / .zip"]
+  T1 -->|"Salmon quant"| Q[("quant/sample/quant.sf")]
+  TXI -.-> Q
+  Q -->|"tximport<br/>(all samples)"| RDS[("_tximport.rds<br/>gene × sample")]
+  GTF -.-> RDS
+  T1 -->|"HISAT2 → samtools sort"| B[("_sorted.bam + .bai<br/>_stats.txt")]
+  GI -.-> B
+  B -->|"bamCoverage"| W[("sample.bw<br/>_fwd.bw / _rev.bw")]
+  B -->|"samtools merge<br/>(replicates)"| MB[("merged .bam")] -->|"bamCoverage"| MW[("merged .bw")]
+  H1 & T1 & Q & B -.->|"MultiQC"| MQ["_multiqc_report.html"]
+```
+
+::: {.callout-note}
+## About the `module load` lines in this part
+
+Each step chapter shows **"What bagPipes runs"**: the exact commands from its
+Snakefile, which start with `module load <tool>/<version>` because bagPipes
+runs on a cluster with environment modules. If you use the book's conda
+environment, the tools are already available: skip those lines. The
+*Try it* boxes are written to work anywhere.
+:::
+
 ## Every rule in one table
 
 | Rule | Tool (version) | Input | Output | Chapter |

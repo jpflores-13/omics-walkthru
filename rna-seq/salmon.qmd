@@ -3,6 +3,24 @@
 **Rule:** `quant` · **Tool:** Salmon 1.10.3 · **Input:** trimmed R1 and R2 ·
 **Output:** `quant/{sample}/quant.sf` plus a folder of logs and metadata
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s1,s3,s4,s5,s6,s7 other;
+  class s2 here;
+```
+:::
+
 ## The problem it solves
 
 For differential expression, what you need is **how many reads came from each gene** in
@@ -110,14 +128,33 @@ Two numbers to check (both also appear in MultiQC):
 
 ## Try it
 
+Everything in a *Try it* box assumes the [practice setup](practice-setup.qmd):
+`source $WALK/env.sh` and `conda activate rnaseq-tools` in your terminal (on a
+cluster, inside an interactive job). You need the trimmed reads from
+[Trimming](trimming.qmd#try-it).
+
 ```bash
-cd output/quant/IMGL_iMGL_WT_Ab_24h_1_1
+cd $WALK/work
+for S in N61311_untrt N61311_dex N052611_untrt N052611_dex; do
+  salmon quant -i $SALMON_INDEX -l A -p 4 \
+    -1 trim/${S}_R1_001_val_1.fq.gz -2 trim/${S}_R2_001_val_2.fq.gz \
+    -o quant/$S
+done
+```
+
+Then look at one sample:
+
+```bash
+cd quant/N61311_untrt
 head quant.sf
 grep "Mapping rate" logs/salmon_quant.log
 grep expected_format lib_format_counts.json
-# the 10 most abundant transcripts by TPM
-sort -k4,4gr quant.sf | head -11
+sort -k4,4gr quant.sf | head -11          # the 10 most abundant transcripts by TPM
 ```
+
+With the `chr22` practice references, the mapping rate will be only a few
+percent: most reads come from other chromosomes. With `full` references, expect
+70–90 %. Is the airway library stranded? `expected_format` tells you.
 
 ::: {.callout-tip}
 ## Check your understanding

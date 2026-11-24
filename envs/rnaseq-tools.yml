@@ -1,0 +1,25 @@
+## Command-line tools used in the RNA-seq module.
+## Create with:   conda env create -f envs/rnaseq-tools.yml
+## Activate with: conda activate rnaseq-tools
+## Apple Silicon Macs: if a package is "not available for osx-arm64", use
+##   CONDA_SUBDIR=osx-64 conda env create -f envs/rnaseq-tools.yml
+name: rnaseq-tools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - fastqc
+  - trim-galore
+  - salmon
+  - hisat2
+  - samtools
+  - deeptools
+  - multiqc
+  - seqkit
+  - bedtools
+  - ucsc-bigwiginfo
+  - ucsc-bigwigtobedgraph
+  - ucsc-bedgraphtobigwig
+  - sra-tools
+  - pigz
+  - curl

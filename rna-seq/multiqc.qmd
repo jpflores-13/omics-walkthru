@@ -4,6 +4,24 @@
 output · **Output:** `QC/{runName}_multiqc_report.html` and
 `QC/{runName}_multiqc_data/`
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s1,s2,s3,s4,s5,s7 other;
+  class s6 here;
+```
+:::
+
 ## The problem it solves
 
 By now each sample has a FastQC report per read, two trimming reports, a Salmon
@@ -60,6 +78,23 @@ own QC figures or a supplementary table.
 ```bash
 column -t output/QC/*_multiqc_data/multiqc_general_stats.txt | less -S
 ```
+
+## Try it
+
+Everything in a *Try it* box assumes the [practice setup](practice-setup.qmd):
+`source $WALK/env.sh` and `conda activate rnaseq-tools` in your terminal (on a
+cluster, inside an interactive job). MultiQC collects the logs from all the
+earlier *Try it* boxes:
+
+```bash
+cd $WALK/work
+multiqc . -o multiqc
+open multiqc/multiqc_report.html        # macOS; Linux: xdg-open
+```
+
+Hands-on runs don't keep every log the pipeline does (for example, nothing saved
+HISAT2's summary to a file), so some sections may be missing. The FastQC,
+Cutadapt, Salmon and Samtools sections should all be there.
 
 ::: {.callout-tip}
 ## Check your understanding

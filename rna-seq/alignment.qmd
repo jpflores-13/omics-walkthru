@@ -4,6 +4,24 @@
 samtools 1.22 · **Input:** trimmed R1 and R2 · **Output:**
 `align/{sample}_sorted.bam`, `.bam.bai`, `_stats.txt`
 
+::: {.callout-note appearance="minimal" icon="false"}
+**You are here** (blue box):
+
+```{mermaid}
+%%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+flowchart LR
+  RAW[("FASTQ")] --> s0["FastQC"]
+  RAW --> s1["Trim"]
+  s1 --> s2["Salmon"] --> s7["tximport"] --> R[("counts → DESeq2")]
+  s1 --> s3["HISAT2"] --> s4["Tracks"] --> s5["Merge"]
+  s0 & s1 & s2 & s3 -.-> s6["MultiQC"]
+  classDef here fill:#2c7bb6,color:#fff,stroke:#2c7bb6,font-weight:bold;
+  classDef other fill:#f4f6f8,stroke:#c5ccd3,color:#555;
+  class s0,s1,s2,s4,s5,s6,s7 other;
+  class s3 here;
+```
+:::
+
 ## The problem it solves
 
 Salmon tells you *how much* of each transcript there is, but not *where* the
@@ -95,19 +113,46 @@ From `_stats.txt` and the HISAT2 summary:
 
 ## Try it
 
+Everything in a *Try it* box assumes the [practice setup](practice-setup.qmd):
+`source $WALK/env.sh` and `conda activate rnaseq-tools` in your terminal (on a
+cluster, inside an interactive job). You need the trimmed reads from
+[Trimming](trimming.qmd#try-it).
+
+The same pipe bagPipes runs, by hand (here HISAT2's summary prints to your
+screen):
+
 ```bash
-module load samtools/1.22
-B=output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam
-cat output/align/IMGL_iMGL_WT_Ab_24h_1_1_stats.txt
+cd $WALK/work && mkdir -p align
+for S in N61311_untrt N61311_dex N052611_untrt N052611_dex; do
+  hisat2 -p 4 -x $HISAT2_INDEX -1 trim/${S}_R1_001_val_1.fq.gz -2 trim/${S}_R2_001_val_2.fq.gz \
+    | samtools view -u | samtools sort -o align/${S}_sorted.bam
+  samtools index align/${S}_sorted.bam
+  samtools flagstat align/${S}_sorted.bam > align/${S}_stats.txt
+done
+```
+
+Then explore one:
+
+```bash
+B=align/N61311_untrt_sorted.bam
+cat align/N61311_untrt_stats.txt
 samtools idxstats $B | sort -k3,3nr | head        # which chromosomes have the most reads?
 samtools view $B | awk '$6 ~ /N/' | wc -l          # how many alignments are spliced?
 samtools view $B | awk '$6 ~ /N/' | head -3 | cut -f1-6
-grep -r "overall alignment rate" output/logs_slurm/ .snakemake/slurm_logs/ 2>/dev/null
 ```
 
-Then load the BAM and `.bai` into IGV and look at a highly expressed gene
-such as `ACTB` or `GAPDH`. You should see reads stacked on exons and thin
-lines joining them across introns.
+Load the BAM and its `.bai` into IGV (genome **hg38**) and look at a highly
+expressed gene: `ACTB` or `GAPDH` with full references, or `MYH9` if you used
+the `chr22` references. You should see reads stacked on exons and thin lines
+joining them across introns.
+
+::: {.callout-note collapse="true"}
+## In a bagPipes run
+
+Outputs are in `output/align/`. HISAT2's summary is in the SLURM log, not in
+`output/logs/` (see above):
+`grep -r "overall alignment rate" output/logs_slurm/ .snakemake/slurm_logs/`
+:::
 
 ::: {.callout-tip}
 ## Check your understanding

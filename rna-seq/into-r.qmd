@@ -1,157 +1,173 @@
 # Into R: a first look with DESeq2 {#sec-into-r}
 
-`RNApipe` stops at `{runName}_tximport.rds`. This chapter shows how to pick
-it up in R and take the first steps of a differential expression analysis
-with **DESeq2**. It's an introduction, not a full statistics course. The
+The processing ends with gene-level counts: the `tximport` object, from a
+pipeline or from your own Salmon runs. This chapter picks them up in R and
+takes the first steps of a differential expression analysis with **DESeq2**.
+It's an introduction, not a full statistics course. The
 [DESeq2 vignette](https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html)
 is the reference.
 
+```{mermaid}
+flowchart LR
+  Q["Salmon quant.sf<br/>(one folder per sample)"] --> A["Option A<br/>tximport"] --> D1["DESeqDataSetFromTximport()"]
+  Q --> B["Option B<br/>tximeta + summarizeToGene"] --> D2["DESeqDataSet()"]
+  R["pipeline's<br/>_tximport.rds"] -.-> D1
+  D1 & D2 --> DDS["dds"] --> P["PCA<br/>(check samples)"] --> T["DESeq() → results()"] --> O["table of genes:<br/>log2FC, padj"]
+```
+
 ::: {.callout-note}
-With the 100 k-read test data, the results won't be biologically
-meaningful; there are far too few reads. Use it to learn the steps, then run
-the same code on a real dataset.
+## What to expect from the practice data
+
+The practice set has two donors, untreated vs dexamethasone, and only 500,000
+read pairs per sample (with the `chr22` references, a few thousand counted
+reads). That's enough to **learn every step**, but not for reliable
+statistics. Run the same code on the full airway dataset (see
+[download-public-data](https://jpflores-13.github.io/download-public-data/chapters/worked-example.html))
+or your own data for real results.
 :::
 
 ## Setup
 
-Run R either on Longleaf (OnDemand RStudio, or `module load r/4.4.0` then `R`)
-or on your laptop after copying the RDS, the copied samplesheet and the GTF.
+Use the `rnaseq-r` conda environment (`conda activate rnaseq-r`, then `R`),
+or any R ≥ 4.3 / RStudio with:
 
 ```r
-## install once
 install.packages("BiocManager")
-BiocManager::install(c("DESeq2", "tximport", "tximeta", "rtracklayer", "apeglm"))
+BiocManager::install(c("DESeq2", "tximport", "tximeta", "GenomicFeatures", "rtracklayer", "apeglm"))
 ```
 
-There are two ways in. **Option A** uses the `_tximport.rds` that RNApipe
-writes. **Option B** skips it and reads the Salmon folders with **tximeta**
-([why](tximport.qmd#tximeta)). Both end in the same `dds` object; everything
-from step 4 on is identical.
+Start R from a terminal where you ran `source $WALK/env.sh`, so
+`Sys.getenv("WALK")` and `Sys.getenv("GTF")` work. In RStudio, replace those
+with the actual paths.
 
-## Option A: start from the tximport RDS
+## Describe the samples
 
-### 1. Load the object and sample information
+DESeq2 needs a table with one row per sample and the variables you want to
+compare. For the practice data:
 
 ```r
 library(DESeq2)
 
-txi <- readRDS("output/quant/IMGL_iMGL_WT_1_tximport.rds")
-ss  <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt",
-                  stringsAsFactors = FALSE,
-                  na.strings = "")      # keep the word "NA" (no treatment) as text
-
-## the current txImporter.R leaves sample names as NA; fix them (order = samplesheet order)
-for (m in c("counts", "abundance", "length")) colnames(txi[[m]]) <- ss$sn
-
-dim(txi$counts)          # genes x samples
-head(txi$counts)
-```
-
-### 2. Describe the samples
-
-DESeq2 needs a table with one row per sample (in the **same order** as the
-columns of the matrices) and the variables you want to compare.
-
-```r
+walk    <- Sys.getenv("WALK")                       # e.g. "~/omics-walkthru-practice"
+samples <- c("N61311_untrt", "N61311_dex", "N052611_untrt", "N052611_dex")
 coldata <- data.frame(
-  row.names = ss$sn,
-  condition = factor(paste(ss$Treatment, ss$Time, sep = "_")),
-  rep       = factor(ss$Bio_Rep)
+  row.names = samples,
+  donor     = factor(sub("_.*", "", samples)),
+  treatment = factor(sub(".*_", "", samples), levels = c("untrt", "dex"))   # first level = reference
 )
-coldata$condition <- relevel(coldata$condition, ref = "NA_00h")   # the control
 coldata
-stopifnot(identical(rownames(coldata), colnames(txi$counts)))
 ```
 
-### 3. Build the DESeq2 object
+The **first level** of `treatment` (`untrt`) is the reference: fold changes
+are reported as `dex` relative to `untrt`.
+
+## Option A: tximport
 
 ```r
-dds <- DESeqDataSetFromTximport(txi, colData = coldata, design = ~ condition)
+library(tximport)
+library(GenomicFeatures)
 
-## drop genes with almost no reads (speeds things up, doesn't change results much)
-keep <- rowSums(counts(dds) >= 10) >= 2
-dds  <- dds[keep, ]
+files <- file.path(walk, "work", "quant", samples, "quant.sf")
+names(files) <- samples
+txdb    <- makeTxDbFromGFF(Sys.getenv("GTF"), format = "gtf")
+tx2gene <- select(txdb, keys = keys(txdb, "GENEID"), keytype = "GENEID", columns = "TXNAME")[, 2:1]
+txi     <- tximport(files, type = "salmon", tx2gene = tx2gene)
+
+stopifnot(identical(rownames(coldata), colnames(txi$counts)))
+dds <- DESeqDataSetFromTximport(txi, colData = coldata, design = ~ donor + treatment)
 ```
 
 `DESeqDataSetFromTximport` takes the counts (rounded to whole numbers) and
 uses `txi$length` as a per-gene, per-sample offset ([tximport](tximport.qmd)).
 
-## Option B: start from tximeta {#option-b-start-from-tximeta}
+::: {.callout-note collapse="true"}
+## Coming from a pipeline's `_tximport.rds` (e.g. bagPipes RNApipe)
+
+```r
+txi <- readRDS("output/quant/<runName>_tximport.rds")
+ss  <- read.delim("output/<runName>_RNApipeSamplesheet.txt", na.strings = "")
+## bagPipes' current txImporter.R leaves column names as NA; the order is the samplesheet's
+for (m in c("counts", "abundance", "length")) colnames(txi[[m]]) <- ss$sn
+```
+
+Then build `coldata` from the columns of `ss` (one row per `ss$sn`, same order).
+:::
+
+## Option B: tximeta {#option-b-start-from-tximeta}
 
 ```r
 library(tximeta)
-library(DESeq2)
 
-ss <- read.delim("output/IMGL_iMGL_WT_1_RNApipeSamplesheet.txt",
-                 stringsAsFactors = FALSE, na.strings = "")
-coldata <- data.frame(
-  files     = file.path("output/quant", ss$sn, "quant.sf"),
-  names     = ss$sn,
-  condition = factor(paste(ss$Treatment, ss$Time, sep = "_")),
-  rep       = factor(ss$Bio_Rep)
-)
-coldata$condition <- relevel(coldata$condition, ref = "NA_00h")
-
-se  <- tximeta(coldata)          # see the tximeta section if it says the index is unknown
+cd <- data.frame(files = file.path(walk, "work", "quant", samples, "quant.sf"),
+                 names = samples, coldata)
+se  <- tximeta(cd)            # if it says the index is unknown, see "linked transcriptomes"
 gse <- summarizeToGene(se)
-dds <- DESeqDataSet(gse, design = ~ condition)
-dds <- dds[rowSums(counts(dds) >= 10) >= 2, ]
+dds <- DESeqDataSet(gse, design = ~ donor + treatment)
 ```
 
-A bonus of this route: `rowRanges(dds)` holds each gene's coordinates and,
-for GENCODE, its symbol (`mcols(gse)$gene_name` when available), so step 6
-below needs no GTF.
+The practice `chr22` index is a custom transcriptome, so tximeta won't
+recognise it until you link it ([tximeta](tximport.qmd#tximeta)). The bonus of
+this route: `rowRanges(dds)` holds every gene's coordinates.
 
-## 4. Look before you test: PCA
+## Filter, then look before you test
 
 ```r
-vsd <- vst(dds, blind = TRUE)        # variance-stabilised values for plotting
-plotPCA(vsd, intgroup = "condition")
+dds <- dds[rowSums(counts(dds) >= 10) >= 2, ]      # drop genes with almost no reads
+nrow(dds)
+
+vsd <- if (nrow(dds) >= 1000) vst(dds, blind = TRUE) else varianceStabilizingTransformation(dds, blind = TRUE)
+plotPCA(vsd, intgroup = c("treatment", "donor"))
 ```
 
-Replicates of a condition should sit near each other. If a sample sits with
-the wrong group, check the samplesheet before anything else.
+Samples should separate by treatment or by donor. Often donor dominates in
+primary cells, which is exactly why the design includes `donor`. If a sample
+sits somewhere unexpected, check the sample table before anything else.
 
-## 5. Test
+## Test
 
 ```r
 dds <- DESeq(dds)
-resultsNames(dds)                     # e.g. "condition_Ab_24h_vs_NA_00h"
-res <- results(dds, name = "condition_Ab_24h_vs_NA_00h", alpha = 0.05)
+resultsNames(dds)                     # includes "treatment_dex_vs_untrt"
+res <- results(dds, name = "treatment_dex_vs_untrt", alpha = 0.05)
 summary(res)
 
-## shrink fold changes for ranking and plotting
-resLFC <- lfcShrink(dds, coef = "condition_Ab_24h_vs_NA_00h", type = "apeglm")
+resLFC <- lfcShrink(dds, coef = "treatment_dex_vs_untrt", type = "apeglm")   # shrunken fold changes
 plotMA(resLFC, ylim = c(-5, 5))
 ```
+
+`design = ~ donor + treatment` compares dex with untreated **within each
+donor**, so differences between donors don't drown out the drug effect.
 
 | Column of `res` | Meaning |
 |---|---|
 | `baseMean` | Average normalised count across all samples |
-| `log2FoldChange` | log2(treated / control): 1 = doubled, −1 = halved |
+| `log2FoldChange` | log2(dex / untrt): 1 = doubled, −1 = halved |
 | `lfcSE` | Its standard error |
 | `pvalue` | Raw p-value |
 | `padj` | **Adjusted p-value** (Benjamini–Hochberg). Use this one; `NA` means the gene was filtered out (too low or an outlier) |
 
-## 6. Add gene names and save
+## Add gene names and save
 
 ```r
-gtf   <- rtracklayer::import("gencode.v49.primary_assembly.annotation.gtf")
+gtf   <- rtracklayer::import(Sys.getenv("GTF"))
 genes <- unique(as.data.frame(gtf[gtf$type == "gene"])[, c("gene_id", "gene_name", "gene_type")])
 
 out <- as.data.frame(resLFC)
 out$gene_id <- rownames(out)
 out <- merge(genes, out, by = "gene_id")
 out <- out[order(out$padj), ]
-write.csv(out, "DE_Ab24h_vs_ctrl.csv", row.names = FALSE)
+write.csv(out, "DE_dex_vs_untrt.csv", row.names = FALSE)
 head(out[, c("gene_name", "log2FoldChange", "padj")], 20)
 ```
 
+With the full airway dataset, well-known dexamethasone-responsive genes such as
+*FKBP5*, *TSC22D3* and *PER1* go up strongly. With the practice subset, check
+whether any of them appear (they're not on chr22).
+
 ## Where to go next
 
-- **Normalised counts** for plotting one gene: `plotCounts(dds, gene = "ENSG...", intgroup = "condition")`.
-- **Batch or paired designs**: `design = ~ rep + condition` when replicates
-  were processed in batches.
+- **One gene**: `plotCounts(dds, gene = "ENSG...", intgroup = "treatment")`.
+- **More complex designs**: time courses, interactions; see the DESeq2 vignette.
 - **Gene-set enrichment** (fgsea, clusterProfiler) on the ranked list.
 
 ::: {.callout-tip}
@@ -160,16 +176,17 @@ head(out[, c("gene_name", "log2FoldChange", "padj")], 20)
 1. Why must the rows of `coldata` be in the same order as the columns of
    `txi$counts`?
 2. A gene has `log2FoldChange = 2` and `padj = 0.3`. How do you describe it?
-3. Why do we look at the PCA before running `results()`?
+3. Why include `donor` in the design?
 
 ::: {.callout-note collapse="true" appearance="simple"}
 ## Answers
 
 1. DESeq2 matches them by position. If they're out of order, each sample's
-   counts get the wrong condition label, and every result is wrong.
+   counts get the wrong labels, and every result is wrong.
 2. It looks 4× higher in the treated samples, but the evidence isn't strong
    enough to call it differentially expressed at the usual cut-off (padj < 0.05).
-3. To catch mislabelled samples, outliers or batch effects that would distort
-   the test.
+3. Each donor is measured both untreated and treated (a paired design).
+   Accounting for donor removes donor-to-donor differences from the noise,
+   so the treatment effect is easier to detect.
 :::
 :::

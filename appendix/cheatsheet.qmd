@@ -1,10 +1,17 @@
 # Command cheat sheet {#sec-cheatsheet}
 
-## Longleaf and SLURM
+## Setup (every new terminal)
 
 ```bash
-ssh onyen@longleaf.unc.edu
-srun -p interact -n 1 --mem=8g -t 2:00:00 --pty bash    # interactive job
+conda activate rnaseq-tools            # the book's tools
+source ~/omics-walkthru-practice/env.sh   # $WALK, $DATA, $REF, $SALMON_INDEX, $HISAT2_INDEX, $GTF
+```
+
+## Clusters (SLURM)
+
+```bash
+ssh <user>@<cluster address>
+srun -n 1 -c 4 --mem=8g -t 2:00:00 --pty bash           # interactive job (add -p <partition> if needed)
 sbatch script.sh                                          # submit
 squeue -u $USER                                           # my jobs
 sacct -j JOBID --format=JobID,JobName,State,Elapsed,MaxRSS

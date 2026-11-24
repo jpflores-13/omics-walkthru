@@ -7,7 +7,9 @@
   GTF) and alignment data (SAM/BAM) match the level of this book.
 - [The Carpentries: The Unix Shell](https://swcarpentry.github.io/shell-novice/),
   a free hands-on lesson.
-- [UNC Research Computing: Longleaf documentation](https://help.rc.unc.edu/longleaf-cluster/).
+- [HPC Carpentry: Introduction to High-Performance Computing](https://carpentries-incubator.github.io/hpc-intro/), for working on a cluster.
+- [Bioconda](https://bioconda.github.io/) and [Miniforge](https://github.com/conda-forge/miniforge), for installing the tools.
+- UNC users: [Longleaf documentation](https://help.rc.unc.edu/longleaf-cluster/).
 
 ## File formats
 

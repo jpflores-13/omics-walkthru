@@ -1,0 +1,17 @@
+## R and Bioconductor packages for the "Into R" and "tximport and tximeta" chapters.
+## Create with:   conda env create -f envs/rnaseq-r.yml
+## Or, in an R you already have:
+##   install.packages("BiocManager")
+##   BiocManager::install(c("DESeq2", "tximport", "tximeta", "rtracklayer", "GenomicFeatures", "apeglm"))
+name: rnaseq-r
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base
+  - bioconductor-deseq2
+  - bioconductor-tximport
+  - bioconductor-tximeta
+  - bioconductor-rtracklayer
+  - bioconductor-genomicfeatures
+  - bioconductor-apeglm

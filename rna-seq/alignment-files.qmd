@@ -22,7 +22,7 @@ The SAM text only ever exists inside the pipe in the `align` rule
 A BAM starts with header lines that begin with `@`:
 
 ```bash
-samtools view -H output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam | head
+samtools view -H $WALK/work/align/N61311_untrt_sorted.bam | head
 ```
 
 ```
@@ -40,7 +40,7 @@ someone sends you a BAM and you want to know how it was made.
 ## The alignment lines: 11 columns
 
 ```bash
-samtools view output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam | head -2
+samtools view $WALK/work/align/N61311_untrt_sorted.bam | head -2
 ```
 
 ```
@@ -151,8 +151,7 @@ view` can jump straight to a region instead of reading the whole file.
 ## samtools: the tool for BAM files
 
 ```bash
-module load samtools/1.22
-B=output/align/IMGL_iMGL_WT_Ab_24h_1_1_sorted.bam
+B=$WALK/work/align/N61311_untrt_sorted.bam     # from the Alignment chapter's Try it
 
 samtools view -H $B                     # header only
 samtools view $B | head                 # first alignments, as text
