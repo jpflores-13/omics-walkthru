@@ -8,6 +8,7 @@ It's an introduction, not a full statistics course. The
 is the reference.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   Q["Salmon quant.sf<br/>(one folder per sample)"] --> A["Option A<br/>tximport"] --> D1["DESeqDataSetFromTximport()"]
   Q --> B["Option B<br/>tximeta + summarizeToGene"] --> D2["DESeqDataSet()"]

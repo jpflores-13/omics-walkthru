@@ -1,0 +1,220 @@
+---
+title: "From the sequencer to the shell"
+subtitle: "omics-walkthru · RNA-seq · Session 1"
+author: "JP Flores"
+---
+
+## Today {#today}
+
+1. What happens **after you submit** your libraries
+2. **Where** to run the analysis: laptop, workstation, cluster
+3. Your **practice setup**
+4. The **shell**: files, plain text, gzip, pipes
+
+## The whole journey {#journey}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  FQ[("FASTQ.gz")] -->|"FastQC"| QC["QC"]
+  FQ -->|"Trim Galore"| TQ[("trimmed")]
+  TQ -->|"Salmon"| SF[("quant.sf")] -->|"tximport"| CM[("counts")] -->|"DESeq2"| DE[("DE table")]
+  TQ -->|"HISAT2"| BAM[("BAM")] -->|"bamCoverage"| BW[("bigWig")]
+```
+
+Five sessions walk through this, left to right.
+
+## A library, in one picture {#library}
+
+```
+5'-[P5][i5][Read 1 primer]=====cDNA insert=====[Read 2 primer][i7][P7]-3'
+```
+
+- **P5 / P7**: stick to the flow cell
+- **i5 / i7 index**: your sample's barcode
+- **Insert**: your RNA (as cDNA), ~150–400 bp
+
+## Paired-end sequencing {#paired-end}
+
+```
+insert:  5'-ACGTTGCA..............................GGATCCTA-3'
+Read 1:     ACGTTGCA.......>
+Read 2:                               <.......TAGGATCC
+```
+
+- `2x100` = 100 bases from each end
+- **Depth**: read pairs per sample (20–30 M for gene-level DE)
+- Insert shorter than the read → read runs into **adapter** → trimming
+
+## Demultiplexing {#demultiplexing}
+
+The core sorts reads by **index** into files per sample:
+
+```
+WT_Treated_Rep1_S4_R1_001.fastq.gz
+└ sample name ─┘└S#┘└R1┘└001┘
+```
+
+- Two samples with the same index → **mixed forever**
+- Several lanes (`_L001_`, `_L002_`) → join them before analysis
+
+## Strandedness (dUTP) {#strandedness}
+
+Most stranded kits (TruSeq Stranded, NEB Directional):
+
+- **Read 1** = reverse complement of the RNA (antisense)
+- **Read 2** = same as the RNA (sense)
+
+A gene on the **+** strand → Read 1 aligns to **−**.
+
+Ask the core: **which kit? stranded?**
+
+::: {.book-link}
+[After submission](../rna-seq/after-submission.html)
+:::
+
+## Where to run it {#computing}
+
+| | Laptop | Workstation | Cluster |
+|---|---|---|---|
+| For | learning, R | one project | many samples, pipelines |
+| RAM | 8–32 GB | 64–256 GB | lots per node |
+| Run tools by | typing | typing | **jobs** |
+| Software | conda | conda | conda or **modules** |
+
+Windows → install **WSL** first.
+
+## Clusters in one picture {#cluster}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  L["laptop"] -- ssh --> LN["login node<br/>light work only"]
+  LN -- "sbatch / srun" --> S["SLURM"]
+  S --> C1["compute"] & C2["compute"]
+  C1 & C2 --- FS[("home · scratch · project")]
+```
+
+- **Never** run heavy tools on the login node
+- **Scratch**: big, fast, purged. **Project**: kept.
+
+## SLURM in five commands {#slurm}
+
+```bash
+srun -c 4 --mem=8g -t 2:00:00 --pty bash    # interactive job
+sbatch my_job.sh                            # batch job
+squeue -u $USER                             # what's running
+sacct -j 123456                             # how did it go
+scancel 123456                              # stop it
+```
+
+## Software: conda {#conda}
+
+```bash
+conda env create -f envs/rnaseq-tools.yml   # once
+conda activate rnaseq-tools                 # every new terminal
+salmon --version
+```
+
+Apple Silicon error? `CONDA_SUBDIR=osx-64 conda env create ...`
+
+## Practice setup {#practice-setup}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  A["conda env"] --> B["practice reads<br/>4 airway samples"] --> C["references<br/>chr22 or full"] --> D["env.sh<br/>$DATA $REF"]
+```
+
+```bash
+export WALK=~/omics-walkthru-practice; mkdir -p $WALK && cd $WALK
+git clone https://github.com/jpflores-13/omics-walkthru.git
+bash omics-walkthru/practice-data/get_practice_data.sh practice_data
+bash omics-walkthru/practice-data/get_references.sh references chr22 4
+```
+
+::: {.book-link}
+[Practice setup](../rna-seq/practice-setup.html)
+:::
+
+## The practice data {#practice-data}
+
+| Sample | Donor | Treatment |
+|---|---|---|
+| `N61311_untrt` | N61311 | untreated |
+| `N61311_dex` | N61311 | dexamethasone |
+| `N052611_untrt` | N052611 | untreated |
+| `N052611_dex` | N052611 | dexamethasone |
+
+Airway smooth muscle (GEO GSE52778), first 500,000 read pairs each, 2 × 63 bp.
+
+## The shell {#shell}
+
+```bash
+ls   -l   -h   ~/omics-walkthru-practice
+#^   ^^^^^^^   ^^^^^^^^^^^^^^^^^^^^^^^^
+#program options  argument
+```
+
+- **Absolute** path: starts with `/`
+- **Relative** path: from where you are (`pwd`)
+- `.` here · `..` up one · `~` home · **Tab** autocompletes
+
+## Plain text vs binary {#plain-text}
+
+| Plain text (read with `less`) | Binary (need a tool) |
+|---|---|
+| FASTQ, FASTA, GTF, BED, SAM, samplesheet | BAM, bigWig, RDS |
+
+Tables are **tab-separated**. Check tabs: `cat -A file | head` (tabs = `^I`).
+
+## gzip {#gzip}
+
+```bash
+zcat reads.fastq.gz | head -8        # look without unpacking (macOS: gzip -dc)
+gzip -t reads.fastq.gz && echo OK    # is it complete?
+md5sum reads.fastq.gz                # fingerprint
+```
+
+- FASTQ compresses 3–5×
+- Tools read `.gz` directly: **don't unzip**
+
+## stdout, stderr, redirection {#redirection}
+
+```bash
+tool ... > out.txt                  # results to a file
+tool ... 1> log.out 2> log.err      # results and messages apart
+```
+
+Many tools write their summary to **stderr** → check the `.err` file.
+
+## Pipes {#pipes}
+
+```bash
+zcat reads.fastq.gz | head -4000 | wc -l
+hisat2 ... | samtools view -u | samtools sort -o out.bam
+```
+
+Small tools, joined. No files in between.
+
+## Try it {#try-it}
+
+::: {.try}
+```bash
+source ~/omics-walkthru-practice/env.sh; conda activate rnaseq-tools
+ls $DATA
+zcat $DATA/N61311_untrt_R1_001.fastq.gz | head -8
+for f in $DATA/*_R1_001.fastq.gz; do echo "$(basename $f): $(( $(gzip -dc $f | wc -l) / 4 ))"; done
+```
+:::
+
+How many reads per file? Why divide by 4?
+
+## Recap {#recap}
+
+- Libraries → paired reads → demultiplexed FASTQ
+- Know your **kit** and **strandedness**
+- Laptop, workstation or cluster: same commands
+- Shell: paths, plain text, gzip, pipes
+
+Next: **opening every file**.

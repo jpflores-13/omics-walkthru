@@ -9,6 +9,7 @@ samtools 1.22 · **Input:** trimmed R1 and R2 · **Output:**
 
 ```{mermaid}
 %%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   RAW[("FASTQ")] --> s0["FastQC"]
   RAW --> s1["Trim"]

@@ -1,0 +1,188 @@
+---
+title: "Where did the reads come from?"
+subtitle: "omics-walkthru · RNA-seq · Session 4"
+author: "JP Flores"
+---
+
+## Today {#today}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  TQ[("trimmed")] -->|"Salmon"| SF[("quant.sf")] -->|"tximport / tximeta"| CM[("counts")]
+  TQ -->|"HISAT2"| BAM[("BAM")] -->|"bamCoverage"| BW[("bigWig")] --> M["merge"]
+  SF & BAM -.->|"MultiQC"| MQ["QC report"]
+```
+
+## Salmon: how much of each transcript? {#salmon}
+
+1. Index the **transcriptome**
+2. Find transcripts each pair is **compatible** with
+3. **EM**: share ambiguous reads by abundance (0.7 / 0.3)
+4. Correct biases → `quant.sf`
+
+```bash
+salmon quant -i $SALMON_INDEX -l A -p 4 -1 R1_trimmed.fq.gz -2 R2_trimmed.fq.gz -o quant/S
+```
+
+## quant.sf {#quant-sf}
+
+```
+Name               Length  EffectiveLength  TPM     NumReads
+ENST00000488147.1  1351    1159.21          41.20   121.6
+```
+
+| | For |
+|---|---|
+| **TPM** | comparing genes **within** a sample |
+| **NumReads** | **DESeq2**, comparing samples |
+
+**Never give TPMs to DESeq2.**
+
+## Two Salmon checks {#salmon-checks}
+
+- **Mapping rate** (`logs/salmon_quant.log`): 70–90 % for poly-A
+- **Library type** (`lib_format_counts.json`):
+  `ISR` dUTP · `IU` unstranded · `ISF` read-1-sense
+
+Practice with chr22 references: a few % mapped. **Expected.**
+
+::: {.book-link}
+[Salmon](../rna-seq/salmon.html)
+:::
+
+## HISAT2: where in the genome? {#alignment}
+
+```bash
+hisat2 -p 4 -x $HISAT2_INDEX -1 R1_trimmed.fq.gz -2 R2_trimmed.fq.gz \
+  | samtools view -u | samtools sort -o S_sorted.bam
+samtools index S_sorted.bam; samtools flagstat S_sorted.bam > S_stats.txt
+```
+
+- Seed → extend → **split across introns** (GT…AG)
+- `-x` is the index **prefix** (`.../genome`), not the folder
+
+## Alignment: good vs worrying {#alignment-qc}
+
+| Metric | Good | Worry |
+|---|---|---|
+| Overall alignment | > 85–90 % | < 70 % |
+| Properly paired | > 85 % | ≪ mapped % |
+| Multi-mapped | 5–15 % | very high (rRNA, repeats) |
+
+In bagPipes, HISAT2's summary is in the **SLURM log**, not `output/logs/`.
+
+::: {.book-link}
+[Alignment](../rna-seq/alignment.html)
+:::
+
+## Signal tracks {#signal}
+
+```bash
+bamCoverage -b S_sorted.bam -o S.bw
+bamCoverage --filterRNAstrand forward -b S_sorted.bam -o S_fwd.bw
+bamCoverage --filterRNAstrand reverse -b S_sorted.bam -o S_rev.bw
+```
+
+- 50 bp bins, **raw counts**: not depth-normalised
+- `--normalizeUsing CPM` to compare samples by eye
+
+## Which strand is which? {#strand}
+
+`--filterRNAstrand` **assumes dUTP**:
+
+| File | Genes on | e.g. |
+|---|---|---|
+| `_fwd.bw` | + strand | *GAPDH* |
+| `_rev.bw` | − strand | *ACTB*, *MYH9* |
+
+*GAPDH* in `_rev`? Read-1-sense kit. Split evenly? Unstranded.
+
+::: {.book-link}
+[Signal tracks](../rna-seq/signal-tracks.html)
+:::
+
+## Merging replicates {#merging}
+
+```yaml
+fileNamesFrom: ['Project', 'Cell_Type', 'Donor', 'Treatment']   # airway_ASM_N61311_untrt
+mergeBy:       ['Project', 'Cell_Type', 'Treatment']            # airway_ASM_untrt
+```
+
+- Columns **left out** of `mergeBy` get pooled
+- Merged files are for **viewing**, never for statistics
+
+::: {.book-link}
+[Merging](../rna-seq/merging.html)
+:::
+
+## MultiQC {#multiqc}
+
+```bash
+multiqc . -o multiqc
+```
+
+One page, every sample side by side: FastQC, Cutadapt, Salmon, samtools.
+
+**Find the sample that doesn't look like the others.**
+
+::: {.book-link}
+[MultiQC](../rna-seq/multiqc.html)
+:::
+
+## tximport: transcripts → genes {#tximport}
+
+```r
+files <- file.path(quant, samples, "quant.sf"); names(files) <- samples
+txi   <- tximport(files, type = "salmon", tx2gene = tx2gene)
+```
+
+| | |
+|---|---|
+| `txi$counts` | reads per gene → DESeq2 |
+| `txi$abundance` | TPM per gene |
+| `txi$length` | per-sample gene length → DESeq2 offset |
+
+Salmon index built with **`--gencode`** so names match the GTF.
+
+## tximeta: tximport + provenance {#tximeta}
+
+- Recognises the transcriptome from the **index checksum**
+- Fetches the matching GTF
+- Returns a `SummarizedExperiment` **with gene coordinates**
+
+```r
+se  <- tximeta(coldata)          # coldata: files, names, ...
+gse <- summarizeToGene(se)
+dds <- DESeqDataSet(gse, ~ donor + treatment)
+```
+
+Custom index? `makeLinkedTxome()` once.
+
+::: {.book-link}
+[tximport and tximeta](../rna-seq/tximport.html)
+:::
+
+## Try it {#try-it}
+
+::: {.try}
+```bash
+cd $WALK/work
+for S in N61311_untrt N61311_dex N052611_untrt N052611_dex; do
+  salmon quant -i $SALMON_INDEX -l A -p 4 \
+    -1 trim/${S}_R1_001_val_1.fq.gz -2 trim/${S}_R2_001_val_2.fq.gz -o quant/$S
+done
+grep expected_format quant/*/lib_format_counts.json
+```
+:::
+
+Is the airway library stranded? Then HISAT2 → IGV → MultiQC.
+
+## Recap {#recap}
+
+- Salmon → **counts**; HISAT2 → **places**
+- Tracks are raw: normalise before comparing by eye
+- Strand files assume dUTP: check with a known gene
+- tximport / tximeta → DESeq2-ready
+
+Next: **the whole pipeline, and R**.

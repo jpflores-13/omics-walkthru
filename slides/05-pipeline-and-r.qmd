@@ -1,0 +1,173 @@
+---
+title: "The whole pipeline, and R"
+subtitle: "omics-walkthru · RNA-seq · Session 5"
+author: "JP Flores"
+---
+
+## Today {#today}
+
+1. **Snakemake** in plain language
+2. Running a **whole pipeline** (bagPipes RNApipe)
+3. **DESeq2**: a first look
+4. How **TT-seq** differs
+
+## Why a workflow manager? {#why-snakemake}
+
+24 samples × 8 steps = **192 commands**. Which one failed?
+
+Snakemake: describe each step **once**; it works out what to run, in what
+order, for every sample, and what's left after a failure.
+
+## A rule {#rule}
+
+```python
+rule signal:
+    input:  bam = "output/align/{sampleName}_sorted.bam"
+    output: "output/signal/unstranded/{sampleName}.bw"
+    shell:  "bamCoverage -b {input.bam} -o {output}"
+```
+
+- `{sampleName}`: a **wildcard**, filled in per sample
+- Works **backwards** from the files you want (`rule all`) → the **DAG**
+
+## What Snakemake gives you {#snakemake-benefits}
+
+- Runs **only what's missing** or out of date
+- Runs independent jobs **in parallel** (one SLURM job each)
+- Deletes outputs of **failed** jobs
+- Deletes `temp()` files when nothing needs them
+
+::: {.book-link}
+[Snakemake in plain language](../rna-seq/snakemake.html)
+:::
+
+## How bagPipes names things {#naming}
+
+| | From | Practice example |
+|---|---|---|
+| Sample name | `fileNamesFrom` columns joined by `_` | `airway_ASM_N61311_untrt` |
+| Run name | columns **constant** across rows | `airway_ASM` |
+| Merge name | `mergeBy` columns | `airway_ASM_untrt` |
+
+**One row = one pair of FASTQs = one unique name.**
+
+## Running the pipeline {#running}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  A["clone"] --> B["samplesheet"] --> C["config"] --> D["dry run<br/>-n"] --> E["sbatch RNApipe.sh"] --> F["watch"]
+  F -->|"error"| G["fix, ./unlock.sh rna"] --> E
+  F -->|"done"| H["keep outputs +<br/>config + samplesheet"]
+```
+
+Needs a **SLURM cluster with modules**. Elsewhere: same ideas, or nf-core/rnaseq.
+
+## Config essentials {#config}
+
+```yaml
+samplesheet: 'RNAsamplesheet.txt'
+fileNamesFrom: ['Project', 'Cell_Type', 'Donor', 'Treatment']
+mergeBy: ['Project', 'Cell_Type', 'Treatment']
+stranded: True
+salmon: '/path/to/salmon_index'
+hisat2: '/path/to/hisat2_index/genome'
+gtf:    '/path/to/gencode.v49.primary_assembly.annotation.gtf'
+```
+
+In bagPipes `main`, the reference lines are **commented out**: fill one block in.
+
+## When it fails {#failures}
+
+```bash
+grep -A 15 "Error in rule" RNApipeCore-*.out     # which rule, which sample
+cat output/logs/<rule>_<sample>.err              # why
+./unlock.sh rna                                  # after a killed run
+sbatch RNApipe.sh                                # finished steps are skipped
+```
+
+Keep: MultiQC report, `quant/`, tracks, **config + samplesheet + commit**.
+
+::: {.book-link}
+[Running the pipeline](../rna-seq/running-rnapipe.html)
+:::
+
+## Into R {#into-r}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  Q["quant.sf"] --> A["tximport"] --> D["dds"]
+  Q --> B["tximeta"] --> D
+  D --> P["PCA"] --> T["DESeq()"] --> R["results"]
+```
+
+## Describe the samples {#coldata}
+
+```r
+samples <- c("N61311_untrt", "N61311_dex", "N052611_untrt", "N052611_dex")
+coldata <- data.frame(row.names = samples,
+  donor     = factor(sub("_.*", "", samples)),
+  treatment = factor(sub(".*_", "", samples), levels = c("untrt", "dex")))
+```
+
+First level = **reference**. Row order = column order of the counts.
+
+## Test {#deseq2}
+
+```r
+dds <- DESeqDataSetFromTximport(txi, coldata, design = ~ donor + treatment)
+dds <- dds[rowSums(counts(dds) >= 10) >= 2, ]
+plotPCA(vst(dds), intgroup = c("treatment", "donor"))
+dds <- DESeq(dds)
+res <- results(dds, name = "treatment_dex_vs_untrt", alpha = 0.05)
+```
+
+`~ donor + treatment`: compare **within** each donor (paired design).
+
+## Reading results {#results}
+
+| Column | Meaning |
+|---|---|
+| `log2FoldChange` | 1 = doubled, −1 = halved |
+| `padj` | **use this** (BH-adjusted); `NA` = filtered |
+
+Full airway: *FKBP5*, *TSC22D3*, *PER1* go **up** with dexamethasone.
+
+::: {.book-link}
+[Into R](../rna-seq/into-r.html)
+:::
+
+## TT-seq: what's different? {#tt-seq}
+
+**4sU pulse** → only RNA made in minutes → mostly **unspliced precursor**.
+
+**Introns are signal**, not noise.
+
+## TT-seq vs RNA-seq processing {#tt-seq-steps}
+
+| Step | RNA-seq | TT-seq |
+|---|---|---|
+| Counts from | **Salmon** (transcripts) | **genome BAMs**: no Salmon |
+| Counted region | exons | **whole gene body** (introns too) |
+| MAPQ filter, dedup | no | **yes** |
+| Strand | optional tracks | **central**: split every BAM |
+| Normalisation | size factors | size factors + **spike-in caveat** |
+
+Global drop in transcription? Invisible without a **spike-in**.
+
+::: {.book-link}
+[How TT-seq differs](../rna-seq/tt-seq.html)
+:::
+
+## Recap of the module {#recap}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart LR
+  FQ[("FASTQ")] -->|"FastQC, Trim Galore"| TQ[("trimmed")]
+  TQ -->|"Salmon"| SF[("quant.sf")] -->|"tximport"| CM[("counts")] -->|"DESeq2"| DE[("results")]
+  TQ -->|"HISAT2"| BAM[("BAM")] -->|"bamCoverage"| BW[("bigWig")]
+```
+
+Book: [jpflores-13.github.io/omics-walkthru](../index.html)

@@ -6,10 +6,11 @@ run of [bagPipes](https://github.com/PhanstielLab/bagPipes) `RNApipe` on the
 practice data, from an empty folder to finished outputs.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
-  A["1. Get the code"] --> B["2. Samplesheet<br/>(which files = which sample)"] --> C["3. Config<br/>(references, naming)"] --> D["4. Dry run<br/>snakemake -n"] --> E["5. Launch<br/>sbatch RNApipe.sh"] --> F["6. Watch<br/>squeue, logs"]
-  F -->|"error"| G["7. Fix, unlock,<br/>rerun"] --> E
-  F -->|"done"| H["8. Keep outputs,<br/>config, samplesheet"]
+  A["Step 1: Get the code"] --> B["Step 2: Samplesheet<br/>(which files = which sample)"] --> C["Step 3: Config<br/>(references, naming)"] --> D["Step 4: Dry run<br/>snakemake -n"] --> E["Step 5: Launch<br/>sbatch RNApipe.sh"] --> F["Step 6: Watch<br/>squeue, logs"]
+  F -->|"error"| G["Step 7: Fix, unlock,<br/>rerun"] --> E
+  F -->|"done"| H["Step 8: Keep outputs,<br/>config, samplesheet"]
 ```
 
 ::: {.callout-important}
@@ -62,6 +63,12 @@ practice data, with the right folder filled in. Copy it over the shipped one:
 ```bash
 cp $DATA/RNAsamplesheet.txt RNAsamplesheet.txt
 ```
+
+For a public dataset you downloaded yourself, build the samplesheet from the
+`SraRunTable.csv` at the top of that dataset's folder, and point
+`Sequencing_Directory` at its `merged/` folder (see the
+[worked example](https://jpflores-13.github.io/download-public-data/chapters/worked-example.html)
+in the download guide).
 
 ```bash
 column -t -s $'\t' RNAsamplesheet.txt | less -S     # view it lined up

@@ -5,10 +5,11 @@ folder layout, so the commands work as written on any computer. This chapter
 sets it up once. It takes about 10 minutes plus the reference build.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
-  A["1. Software<br/>conda env"] --> B["2. Practice reads<br/>4 samples, 500k pairs each<br/>(from ENA)"]
-  B --> C["3. References<br/>GENCODE GTF + FASTA<br/>→ Salmon & HISAT2 indexes"]
-  C --> D["4. Shortcuts<br/>$DATA, $REF, $WALK"]
+  A["Step 1: Software<br/>conda env"] --> B["Step 2: Practice reads<br/>4 samples, 500k pairs each<br/>(from ENA)"]
+  B --> C["Step 3: References<br/>GENCODE GTF + FASTA<br/>→ Salmon & HISAT2 indexes"]
+  C --> D["Step 4: Shortcuts<br/>$DATA, $REF, $WALK"]
   D --> E(["Ready for the<br/>hands-on boxes"])
 ```
 
@@ -49,8 +50,17 @@ N052611_dex_R2_001.fastq.gz    N052611_untrt_R2_001.fastq.gz   N61311_dex_R2_001
 | `N052611_untrt` | N052611 | untreated | SRR1039512 |
 | `N052611_dex` | N052611 | dexamethasone | SRR1039513 |
 
-(How to download public data properly, in full, is covered in the companion
-guide [download-public-data](https://jpflores-13.github.io/download-public-data).)
+::: {.callout-note}
+## Using a different public dataset?
+
+The script above skips the usual route. For any other dataset, you'd get two
+files from NCBI's SRA Run Selector, `SRR_Acc_List.txt` (the runs) and
+`SraRunTable.csv` (the metadata), and put them **at the top of a folder made for
+that dataset**, e.g. `~/public_data/GSE52778/`, which is where you then run the
+downloads and where the FASTQs end up. The companion guide shows how, including
+how to move them from your browser's Downloads folder or up to a cluster:
+[Where to put the two files](https://jpflores-13.github.io/download-public-data/chapters/finding-data.html#where-files-go).
+:::
 
 ## 3. The references
 

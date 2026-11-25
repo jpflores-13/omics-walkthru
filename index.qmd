@@ -23,6 +23,10 @@ bagPipes itself, its [README](https://github.com/PhanstielLab/bagPipes) and code
 are the reference.
 :::
 
+::: {.slides-deck-list}
+[▶ Slides for every session](slides.qmd){.btn .btn-outline-primary .btn-sm}
+:::
+
 ## What you will be able to do
 
 By the end of the RNA-seq module you should be able to:
@@ -51,6 +55,7 @@ What happens to your reads, file by file. Each box is a kind of file and each
 arrow a tool (and a chapter):
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   FQ[("FASTQ.gz<br/>raw reads")] -->|"FastQC"| QC["QC report<br/>(HTML)"]
   FQ -->|"Trim Galore"| TQ[("trimmed<br/>FASTQ.gz")]
@@ -69,6 +74,7 @@ flowchart LR
 ## The road map
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   subgraph F["Foundations"]
     A1["After submission<br/>sequencing, demultiplexing"] --> A2["Computing + practice setup<br/>laptop or cluster, conda"] --> A3["The shell<br/>plain text, gzip, pipes"]

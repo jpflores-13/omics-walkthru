@@ -10,6 +10,7 @@ Before going through the steps one at a time, here is the whole of bagPipes'
    into merged BAMs and tracks.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart TD
   R["Raw FASTQ<br/>R1 + R2 per sample"] --> FQ["fastqc<br/>(FastQC)"]
   R --> TR["trim<br/>(Trim Galore)"]
@@ -43,6 +44,7 @@ The same pipeline drawn as **files** (rounded boxes) and the **tools** that turn
 one into the next (arrow labels). The references each tool needs are on the left.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   subgraph REF["References (made once)"]
     direction TB

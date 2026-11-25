@@ -3,6 +3,10 @@
 This page is for whoever leads the sessions. It suggests a schedule for the
 RNA-seq module, what to prepare, and where learners usually get stuck.
 
+::: {.slides-deck-list}
+[▶ The five session decks](slides.qmd){.btn .btn-outline-primary .btn-sm}
+:::
+
 ## Format
 
 Five sessions of about 90 minutes work well: roughly a third of each session

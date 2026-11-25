@@ -9,6 +9,7 @@ differences, so you can pick what fits and recognise the cluster words
 ## Choosing a computer
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart TD
   Q1{"What are you doing?"} -->|"learning with the<br/>practice data"| LAP["Laptop or workstation is fine<br/>(chr22 references on 8 GB RAM;<br/>full references need ~16 GB)"]
   Q1 -->|"a real experiment<br/>(tens of millions of reads per sample)"| Q2{"Access to a cluster?"}
@@ -77,6 +78,7 @@ log in to a **login node**, shared by everyone and meant only for light work
 you request from a **scheduler**. The most common scheduler is **SLURM**.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   L["Your laptop"] -- ssh --> LN["Login node<br/>(light work only)"]
   LN -- "sbatch / srun" --> S["Scheduler (SLURM)"]

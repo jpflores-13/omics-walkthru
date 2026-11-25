@@ -1,0 +1,28 @@
+# Slides {.unnumbered}
+
+The RNA-seq module comes with five slide decks, one per teaching session
+([Teaching guide](teaching-guide.qmd)). They open in a new tab. Press **F** for
+full screen, **S** for speaker notes, **M** for the slide menu, **Esc** for an
+overview; add `?print-pdf` to the address, then print, to save a PDF.
+
+::: {.slides-deck-list}
+[▶ 1. From the sequencer to the shell](slides/01-sequencer-to-shell.html){.btn .btn-primary target="_blank"}
+[▶ 2. Opening every file](slides/02-file-formats.html){.btn .btn-primary target="_blank"}
+[▶ 3. Tools, and cleaning reads](slides/03-clean-and-check.html){.btn .btn-primary target="_blank"}
+[▶ 4. Where did the reads come from?](slides/04-quantify-and-align.html){.btn .btn-primary target="_blank"}
+[▶ 5. The whole pipeline, and R](slides/05-pipeline-and-r.html){.btn .btn-primary target="_blank"}
+:::
+
+| Session deck | Chapters |
+|---|---|
+| 1. From the sequencer to the shell | [After submission](rna-seq/after-submission.qmd), [Where to run](rna-seq/computing.qmd), [Practice setup](rna-seq/practice-setup.qmd), [The shell](rna-seq/shell-basics.qmd) |
+| 2. Opening every file | [Sequence files](rna-seq/sequence-files.qmd), [Genes and coordinates](rna-seq/annotation-files.qmd), [Alignment files](rna-seq/alignment-files.qmd) |
+| 3. Tools, and cleaning reads | [Tool landscape](rna-seq/tools-landscape.qmd), [Pipeline map](rna-seq/pipeline-map.qmd), [FastQC](rna-seq/fastqc.qmd), [Trimming](rna-seq/trimming.qmd) |
+| 4. Where did the reads come from? | [Salmon](rna-seq/salmon.qmd), [Alignment](rna-seq/alignment.qmd), [Signal tracks](rna-seq/signal-tracks.qmd), [Merging](rna-seq/merging.qmd), [MultiQC](rna-seq/multiqc.qmd), [tximport and tximeta](rna-seq/tximport.qmd) |
+| 5. The whole pipeline, and R | [Snakemake](rna-seq/snakemake.qmd), [Running the pipeline](rna-seq/running-rnapipe.qmd), [Into R](rna-seq/into-r.qmd), [TT-seq](rna-seq/tt-seq.qmd) |
+
+Every chapter also has a **▶ Slides for this chapter** button under its title
+that opens the matching slide.
+
+For downloading public data, the companion guide has its own
+[slides](https://jpflores-13.github.io/download-public-data/slides.html).

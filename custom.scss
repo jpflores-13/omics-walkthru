@@ -1,9 +1,15 @@
 /*-- scss:defaults --*/
+// Mermaid diagrams: measure and draw labels with the same, always-available font,
+// so words aren't clipped when a web font loads late or differs between machines.
+$mermaid-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 $primary:     #2c7bb6;
 $link-color:  #2c7bb6;
 $font-size-base: 0.95rem;
 
 /*-- scss:rules --*/
+
+/* Never clip diagram labels, even if a viewer's font is wider than the one measured */
+svg foreignObject { overflow: visible; }
 .quarto-title-block .quarto-title {
   font-size: 2.2rem;
 }
@@ -19,3 +25,6 @@ pre.sourceCode {
 table {
   font-size: 0.9rem;
 }
+
+.slides-button p { margin: 0.25rem 0 1.25rem 0; }
+.slides-deck-list .btn { margin: 0.2rem 0.4rem 0.2rem 0; }

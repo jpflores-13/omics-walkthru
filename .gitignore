@@ -13,3 +13,7 @@ _book/
 
 /.quarto/
 **/*.quarto_ipynb
+
+# Slide decks build here, then get copied into _book/slides
+slides/_output/
+slides/.quarto/

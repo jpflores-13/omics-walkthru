@@ -1,0 +1,172 @@
+---
+title: "Tools, and cleaning reads"
+subtitle: "omics-walkthru · RNA-seq · Session 3"
+author: "JP Flores"
+---
+
+## Today {#today}
+
+1. The tool landscape: aligners, pseudoaligners, counters
+2. The RNApipe map
+3. **FastQC**
+4. **Trimming**
+
+## Three roads to gene counts {#roads}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart TD
+  T["trimmed reads"] --> G1["align to genome<br/>STAR, HISAT2"] --> G2["count on genes<br/>featureCounts"]
+  T --> P1["map to transcriptome<br/>Salmon, kallisto"] --> P2["tximport"]
+  G2 & P2 --> D["DESeq2"]
+```
+
+bagPipes: **Salmon** for counts, **HISAT2** for BAMs and tracks.
+
+## Aligners {#aligners}
+
+| Tool | Splice-aware | RAM (human) | Note |
+|---|---|---|---|
+| **STAR** | yes | ~32 GB | fast, standard |
+| **HISAT2** | yes | ~8 GB | bagPipes |
+| TopHat | yes | | obsolete |
+| Bowtie2, BWA | **no** | | DNA: ChIP, ATAC — **not RNA** |
+
+Assume: right genome; GT–AG introns; multi-mappers get low MAPQ.
+
+## Pseudoaligners {#pseudoaligners}
+
+| Tool | How |
+|---|---|
+| **Salmon** | selective alignment + EM; bias models |
+| **kallisto** | pseudoalignment on a de Bruijn graph |
+
+Assume: **every RNA is in the annotation**. Intronic / intergenic reads have
+nowhere to go → total RNA maps lower. **No genome coordinates.**
+
+## Strandedness: many names {#strand-names}
+
+| Tool | dUTP | unstranded | read-1-sense |
+|---|---|---|---|
+| Salmon `-l` | `ISR` | `IU` | `ISF` |
+| featureCounts `-s` | `2` | `0` | `1` |
+| HTSeq `-s` | `reverse` | `no` | `yes` |
+| HISAT2 | `RF` | – | `FR` |
+| STAR GeneCounts col. | 4 | 2 | 3 |
+
+::: {.book-link}
+[Aligners, pseudoaligners and counters](../rna-seq/tools-landscape.html)
+:::
+
+## The RNApipe map {#pipeline-map}
+
+```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
+flowchart TD
+  R["raw FASTQ"] --> FQ["fastqc"] & TR["trim"]
+  TR --> QU["quant (Salmon)"] --> TX["tximport"]
+  TR --> AL["align (HISAT2)"] --> SI["signal"] & SS["strandedSignal"]
+  FQ & TR & QU & AL & SI & SS --> MQ["multiqc"]
+  AL -.-> MA["mergeAlign"] -.-> MS["mergeSignal"]
+```
+
+## Files in, files out {#files}
+
+| Step | In | Out |
+|---|---|---|
+| FastQC | raw FASTQ | `_fastqc.html` |
+| Trim Galore | raw FASTQ | `_trimmed.fastq.gz` |
+| Salmon | trimmed + index | `quant.sf` |
+| HISAT2 | trimmed + index | `_sorted.bam` |
+| bamCoverage | BAM | `.bw` |
+| tximport | all `quant.sf` + GTF | `_tximport.rds` |
+
+FastQC files and trimmed FASTQs are `temp()`: deleted after MultiQC.
+
+::: {.book-link}
+[The RNApipe map](../rna-seq/pipeline-map.html)
+:::
+
+## FastQC: is the run OK? {#fastqc}
+
+```bash
+fastqc -o fastqc $DATA/*_001.fastq.gz
+```
+
+| Module | Worry if… |
+|---|---|
+| Per-base quality | collapses mid-read |
+| Adapter content | high early in the read |
+| GC content | sharp extra peak |
+| Overrepresented | adapter / primer dimers at the top |
+
+## Two "fails" to ignore in RNA-seq {#fastqc-ignore}
+
+1. **Per-base sequence content**, first ~12 bases: random-hexamer bias
+2. **Duplication levels**: highly expressed genes, not PCR
+
+Compare samples: the **outlier** matters more than the flag.
+
+::: {.book-link}
+[FastQC](../rna-seq/fastqc.html)
+:::
+
+## Trimming: why {#trimming}
+
+```
+before:  GATTTGGGGTTCAAAGCAGTATCG AGATCGGAAGAGC ACACGTCTGAA
+                 insert              └─ adapter ─┘
+after:   GATTTGGGGTTCAAAGCAGTATCG
+```
+
+- **Adapter**: insert shorter than read
+- **Low-quality 3' ends**
+- Reads too short afterwards → dropped
+
+## Trim Galore defaults {#trim-galore}
+
+```bash
+trim_galore --paired -o trim R1.fastq.gz R2.fastq.gz
+```
+
+| Default | |
+|---|---|
+| adapter | auto-detected (Illumina `AGATCGGAAGAGC`) |
+| `-q 20` | trim 3' bases below Q20 |
+| `--length 20` | drop shorter reads |
+| `--paired` | **drop both mates together** |
+
+## Reading the trimming report {#trim-report}
+
+- **Reads with adapters**: 10–40 % common
+- **Bases kept**: usually > 90 %
+- **Pairs removed (too short)**: well under 5 %
+
+Many pairs removed → adapter dimers or degraded RNA.
+
+::: {.book-link}
+[Trimming](../rna-seq/trimming.html)
+:::
+
+## Try it {#try-it}
+
+::: {.try}
+```bash
+cd $WALK/work
+fastqc -o fastqc $DATA/*_001.fastq.gz
+for S in N61311_untrt N61311_dex N052611_untrt N052611_dex; do
+  trim_galore -o trim --paired $DATA/${S}_R1_001.fastq.gz $DATA/${S}_R2_001.fastq.gz
+done
+```
+:::
+
+Open a FastQC report. How many pairs did trimming remove?
+
+## Recap {#recap}
+
+- Salmon counts, HISAT2 places, featureCounts counts BAMs
+- Know your **strandedness** in every tool's language
+- FastQC: look for **outliers**
+- Trim adapters and bad ends; keep pairs in step
+
+Next: **where did the reads come from?**

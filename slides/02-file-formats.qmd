@@ -1,0 +1,202 @@
+---
+title: "Opening every file"
+subtitle: "omics-walkthru · RNA-seq · Session 2"
+author: "JP Flores"
+---
+
+## Today {#today}
+
+| Format | Holds | Session part |
+|---|---|---|
+| FASTQ / FASTA | sequences | 1 |
+| GTF, BED, bedGraph, bigWig | where things are | 2 |
+| SAM / BAM | alignments | 3 |
+
+## FASTQ: four lines per read {#fastq}
+
+```
+@A00123:456:HXXXXDSX2:1:1101:10004:1000 1:N:0:ACGTACGT+TGCATGCA
+TTGCAGGTCTTCAGCAGTTCCTTGAACTCGTCCAGGTTGATCTTGGCCTTCAGGTTGTCG
++
+FFFFFFFFFFFF:FFFFFFFFFFFFFFFFFFFFF:FFFFFFFFFF,FFFFFFFFFFFFFF
+```
+
+1. `@` name · 2. bases · 3. `+` · 4. one quality character per base
+
+## The header {#fastq-header}
+
+```
+@A00123:456:HXXXXDSX2:1:1101:10004:1000 1:N:0:ACGTACGT+TGCATGCA
+ instrument:run:flowcell:lane:tile:x:y   read:filtered:control:index
+```
+
+- Before the space: the **cluster**, same in R1 and R2
+- `1` / `2`: which read
+- Public archives rewrite it: `@SRR1039508.1 ...`
+
+## Quality scores {#phred}
+
+$Q = -10 \log_{10} P(\text{error})$
+
+| Q | Wrong 1 in | Char (Phred+33) |
+|---|---|---|
+| 10 | 10 | `+` |
+| 20 | 100 | `5` |
+| 30 | 1,000 | `?` |
+| 40 | 10,000 | `I` |
+
+NovaSeq bins qualities: mostly `F` (37), some `:` and `,`.
+
+## R1 and R2 are a matched pair {#pairs}
+
+Line *n* of R1 ↔ line *n* of R2. Never filter or sort one alone.
+
+```bash
+zcat $DATA/N61311_untrt_R1_001.fastq.gz | head -1
+zcat $DATA/N61311_untrt_R2_001.fastq.gz | head -1
+```
+
+## FASTA: reference sequences {#fasta}
+
+```
+>chr1
+NNNNNNNNNN...TAACCCTAACCC...
+```
+
+| | Genome FASTA | Transcriptome FASTA |
+|---|---|---|
+| One entry per | chromosome | transcript (isoform) |
+| Introns | yes | no |
+| Used by | HISAT2, STAR | Salmon, kallisto |
+
+**Build** (GRCh38 = hg38) and **names** (`chr1` vs `1`) must match everywhere.
+
+::: {.book-link}
+[Sequence files](../rna-seq/sequence-files.html)
+:::
+
+## Coordinates: 0-based vs 1-based {#coordinates}
+
+```
+bases:              A   C   G   T   A   C
+1-based (GTF, SAM): 1   2   3   4   5   6
+0-based (BED):    0   1   2   3   4   5   6
+```
+
+**BED start = GTF start − 1.** End is the same.
+
+## GTF: the gene annotation {#gtf}
+
+```
+chr1 HAVANA exon 11426 11671 . + . gene_id "ENSG..."; transcript_id "ENST..."; gene_name "DDX11L2";
+```
+
+| Col | | Col | |
+|---|---|---|---|
+| 1 | chromosome | 6 | score |
+| 2 | source | 7 | **strand** |
+| 3 | **feature** (gene, transcript, exon) | 8 | frame |
+| 4–5 | start–end (1-based) | 9 | attributes |
+
+gene → transcripts → exons. Use **IDs** (ENSG), not names.
+
+## BED: simple intervals {#bed}
+
+```
+chr7   5527147   5530601   ACTB    0   -
+```
+
+- BED3: chrom, start, end · BED6: + name, score, strand
+- **BED12**: + blocks = exons → a whole transcript on one line
+
+```bash
+bedtools intersect -a genes.bed -b regions.bed -u
+bedtools getfasta -fi genome.fa -bed genes.bed -s
+```
+
+## bedGraph and bigWig {#bigwig}
+
+| | bedGraph | **bigWig** |
+|---|---|---|
+| | BED3 + value | same data |
+| Format | text | binary, indexed, zoom levels |
+| Use | small regions | **genome browsers**, metagenes |
+
+```bash
+bigWigInfo sample.bw
+bigWigToBedGraph sample.bw stdout -chrom=chr7 -start=5527000 -end=5531000
+```
+
+::: {.book-link}
+[Genes and coordinates](../rna-seq/annotation-files.html)
+:::
+
+## SAM / BAM {#sam-bam}
+
+| SAM | BAM | CRAM |
+|---|---|---|
+| text | binary, compressed | smaller, needs the reference |
+
+```bash
+samtools view -H sample.bam | head     # header: @SQ chromosomes, @PG history
+samtools view sample.bam | head -2     # alignments
+```
+
+## The 11 columns {#sam-columns}
+
+```
+read1  163  chr7  5527760  60  45M1102N55M  =  5528950  1290  TTGCAGG...  FFFF...  NH:i:1
+```
+
+| # | | # | |
+|---|---|---|---|
+| 1 | read name | 7–8 | mate chrom, position |
+| 2 | **FLAG** | 9 | fragment span |
+| 3–4 | chrom, position (1-based) | 10–11 | sequence, quality |
+| 5 | **MAPQ** | 12+ | tags (`NH`, `NM`, `XS`) |
+| 6 | **CIGAR** | | |
+
+## FLAG and CIGAR {#flag-cigar}
+
+**FLAG** = sum of bits: 1 paired · 2 proper pair · 4 unmapped · 16 reverse ·
+64 read 1 · 128 read 2 · 256 secondary. `samtools flags 163`.
+
+**CIGAR**: `45M1102N55M` = 45 aligned, **1,102 bp intron**, 55 aligned.
+`N` is the fingerprint of RNA-seq.
+
+**MAPQ** (HISAT2): 60 unique · 1 two places · 0 many.
+
+## samtools essentials {#samtools}
+
+```bash
+samtools view -c -F 260 x.bam      # primary mapped reads
+samtools view x.bam chr7:5500000-5600000 | wc -l   # needs x.bam.bai
+samtools flagstat x.bam            # summary
+samtools idxstats x.bam            # reads per chromosome
+samtools sort -o y.bam x.bam && samtools index y.bam
+```
+
+::: {.book-link}
+[Alignment files](../rna-seq/alignment-files.html)
+:::
+
+## Try it {#try-it}
+
+::: {.try}
+```bash
+grep -v "^#" $GTF | cut -f3 | sort | uniq -c | sort -k1,1nr      # feature types
+awk '$3 == "gene"' $GTF | grep -o 'gene_type "[^"]*"' | sort | uniq -c | sort -k1,1nr | head
+samtools flags 99; samtools flags 147
+```
+:::
+
+Which gene type is most common? Decode FLAGs 99 and 147.
+
+## Recap {#recap}
+
+- FASTQ: 4 lines; Phred+33; R1 ↔ R2
+- References must **match** (build, names, release)
+- **BED 0-based**, GTF/SAM 1-based
+- bigWig for looking; BAM for everything about reads
+
+Next: **cleaning and checking reads**.

@@ -11,6 +11,7 @@ alternative ([below](#tximeta))
 
 ```{mermaid}
 %%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   RAW[("FASTQ")] --> s0["FastQC"]
   RAW --> s1["Trim"]
@@ -153,6 +154,7 @@ the newer package from the same group.
    (`metadata`). Everything travels together in one object.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   Q["quant.sf + meta_info.json<br/>(contains index checksum)"] --> T["tximeta()"]
   C["coldata<br/>files + names + condition"] --> T

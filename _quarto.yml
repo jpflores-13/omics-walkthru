@@ -1,6 +1,8 @@
 project:
   type: book
   output-dir: _book
+  # the slide decks are a small sub-project; build them into _book/slides
+  post-render: _scripts/build_slides.py
 
 book:
   title: "omics-walkthru"
@@ -15,6 +17,7 @@ book:
   chapters:
     - index.qmd
     - teaching-guide.qmd
+    - slides.qmd
     - part: "Foundations"
       chapters:
         - rna-seq/after-submission.qmd
@@ -69,3 +72,30 @@ format:
     link-external-icon: true
     link-external-newwindow: true
     number-depth: 2
+
+filters:
+  - _filters/slides-button.lua
+
+# Which slide deck (and slide) each chapter's "Slides" button opens.
+slide-map:
+  rna-seq/after-submission.qmd: "01-sequencer-to-shell.html#/library"
+  rna-seq/computing.qmd: "01-sequencer-to-shell.html#/computing"
+  rna-seq/practice-setup.qmd: "01-sequencer-to-shell.html#/practice-setup"
+  rna-seq/shell-basics.qmd: "01-sequencer-to-shell.html#/shell"
+  rna-seq/sequence-files.qmd: "02-file-formats.html#/fastq"
+  rna-seq/annotation-files.qmd: "02-file-formats.html#/coordinates"
+  rna-seq/alignment-files.qmd: "02-file-formats.html#/sam-bam"
+  rna-seq/tools-landscape.qmd: "03-clean-and-check.html#/roads"
+  rna-seq/pipeline-map.qmd: "03-clean-and-check.html#/pipeline-map"
+  rna-seq/fastqc.qmd: "03-clean-and-check.html#/fastqc"
+  rna-seq/trimming.qmd: "03-clean-and-check.html#/trimming"
+  rna-seq/salmon.qmd: "04-quantify-and-align.html#/salmon"
+  rna-seq/alignment.qmd: "04-quantify-and-align.html#/alignment"
+  rna-seq/signal-tracks.qmd: "04-quantify-and-align.html#/signal"
+  rna-seq/merging.qmd: "04-quantify-and-align.html#/merging"
+  rna-seq/multiqc.qmd: "04-quantify-and-align.html#/multiqc"
+  rna-seq/tximport.qmd: "04-quantify-and-align.html#/tximport"
+  rna-seq/snakemake.qmd: "05-pipeline-and-r.html#/why-snakemake"
+  rna-seq/running-rnapipe.qmd: "05-pipeline-and-r.html#/running"
+  rna-seq/into-r.qmd: "05-pipeline-and-r.html#/into-r"
+  rna-seq/tt-seq.qmd: "05-pipeline-and-r.html#/tt-seq"

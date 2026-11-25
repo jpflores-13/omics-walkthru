@@ -8,6 +8,7 @@
 
 ```{mermaid}
 %%| fig-alt: "Where this step sits in the RNA-seq pipeline"
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   RAW[("FASTQ")] --> s0["FastQC"]
   RAW --> s1["Trim"]
@@ -45,6 +46,7 @@ base-by-base alignment of every read to the genome.
    distribution, and report the abundances.
 
 ```{mermaid}
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
   P["read pair"] --> K["find transcripts<br/>it is compatible with"]
   K --> A["isoform A"] & B["isoform B"] & C["isoform C (no match)"]

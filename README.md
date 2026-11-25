@@ -28,6 +28,14 @@ img/                 figures
 custom.scss          theme tweaks
 ```
 
+## Slides
+
+Five session decks (reveal.js) live in `slides/`, a small Quarto project the
+book builds into `_book/slides/` after rendering (`post-render` in
+`_quarto.yml`). Each chapter gets a **Slides** button from
+`_filters/slides-button.lua`; which slide it opens is set under `slide-map:` in
+`_quarto.yml`.
+
 ## Hands-on setup (for learners)
 
 ```bash

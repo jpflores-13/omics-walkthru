@@ -1,0 +1,31 @@
+## The slide decks are their own small Quarto project. After the book is built,
+## _scripts/build_slides.py renders them here (slides/_output) and copies them
+## into the book's output: _book/slides/<deck>.html
+project:
+  type: default
+  output-dir: _output
+
+format:
+  revealjs:
+    theme: [default, slides.scss]
+    width: 1280
+    height: 720
+    margin: 0.06
+    slide-number: c/t
+    show-slide-number: all
+    transition: none
+    background-transition: none
+    hash-type: title
+    controls-layout: bottom-right
+    menu:
+      side: left
+      numbers: true
+    scrollable: true
+    code-overflow: wrap
+    code-copy: true
+    code-line-numbers: false
+    highlight-style: a11y
+    footer: "omics-walkthru · RNA-seq"
+    link-external-newwindow: true
+    mermaid:
+      theme: neutral
